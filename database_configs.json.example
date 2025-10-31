@@ -1,0 +1,28 @@
+{
+  "default": {
+    "type": "mysql",
+    "host": "localhost",
+    "port": 3306,
+    "user": "your_username",
+    "password": "your_password",
+    "database": "your_database",
+    "charset": "utf8mb4"
+  },
+  "data_warehouse": {
+    "type": "postgresql",
+    "host": "data-warehouse.example.com",
+    "port": 5432,
+    "user": "warehouse_user",
+    "password": "warehouse_password",
+    "database": "dwh_database"
+  },
+  "analytics": {
+    "type": "mysql",
+    "host": "analytics.example.com",
+    "port": 3306,
+    "user": "analytics_user",
+    "password": "analytics_password",
+    "database": "analytics_db",
+    "charset": "utf8mb4"
+  }
+} 
