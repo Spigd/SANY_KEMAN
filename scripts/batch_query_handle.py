@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-批量调用 Dify API 并保存结果
-从 Excel 文件读取问题，并行调用 Dify API，保存原始响应和提取的答案
+批量调用 Dify API 处理脚本
+从 Excel 文件读取问题，并行调用 Dify API，将结果输出到日志
 """
 
 import argparse
@@ -10,7 +10,6 @@ import json
 import logging
 import time
 from datetime import datetime
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any, Optional
 
@@ -23,7 +22,6 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('batch_query_log.txt', encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -336,48 +334,19 @@ def save_results(
     output_dir: str = "output1"
 ):
     """
-    保存结果到文件
+    输出结果统计信息到日志
     
     Args:
         results: 结果列表
-        output_dir: 输出目录
+        output_dir: 输出目录（保留参数以保持兼容性，但不再使用）
     """
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    # 保存原始响应到 results.json
-    results_file = output_path / "results.json"
-    logger.info(f"保存原始响应到: {results_file}")
-
-    with open(results_file, 'w', encoding='utf-8') as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
-
-    # 提取并保存答案到 answers.txt
-    answers_file = output_path / "answers.txt"
-    logger.info(f"保存提取的答案到: {answers_file}")
-
-    with open(answers_file, 'w', encoding='utf-8') as f:
-        for idx, result in enumerate(results):
-            # 只写入答案内容
-            if result['status'] == 'success':
-                answer = extract_answer(result.get('response'))
-                f.write(answer)
-            else:
-                # 错误情况也只记录简单的错误信息
-                error_msg = result.get('error', '未知错误')
-                f.write(f"[错误] {error_msg}")
-
-            # 如果不是最后一个，添加换行符
-            if idx < len(results) - 1:
-                f.write("\n")
-
-    logger.info("结果保存完成")
-
     # 统计信息
     success_count = sum(1 for r in results if r['status'] == 'success')
     error_count = len(results) - success_count
 
+    logger.info("="*80)
     logger.info(f"处理统计: 总计 {len(results)} 个问题, 成功 {success_count} 个, 失败 {error_count} 个")
+    logger.info("="*80)
 
 
 def main():
