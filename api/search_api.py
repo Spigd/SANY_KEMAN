@@ -5,6 +5,9 @@
 
 import logging
 import re
+import sys
+import time
+from pathlib import Path
 from typing import Optional, List
 from fastapi import APIRouter, Query, HTTPException, Depends
 
@@ -12,10 +15,18 @@ from core.models import (
     SearchRequest, SearchResponse, IndexRequest, IndexResponse,
     TokenizationResult, HybridSearchConfig,
     MetricSearchRequest, MetricSearchResponse,
-    ComprehensiveAnalysisRequest, ComprehensiveAnalysisResponse
+    ComprehensiveAnalysisRequest, ComprehensiveAnalysisResponse,
+    BatchQueryRequest, BatchQueryResult, BatchQueryResponse
 )
 from search.hybrid_searcher import HybridSearcher
 from indexing.data_loader import MetadataLoader
+
+# 添加 scripts 目录到 Python 路径
+scripts_path = Path(__file__).parent.parent / "scripts"
+if str(scripts_path) not in sys.path:
+    sys.path.insert(0, str(scripts_path))
+
+from scripts.batch_query_handle import batch_process_questions, extract_answer
 
 logger = logging.getLogger(__name__)
 
@@ -1234,4 +1245,108 @@ def _filter_comprehensive_result(result: dict) -> dict:
         
         filtered["comprehensive_result"][column_name] = filtered_column
     
-    return filtered 
+    return filtered
+
+
+# ==================== 批量查询API ====================
+
+@router.post("/batch-query",
+             response_model=BatchQueryResponse,
+             summary="批量问题查询",
+             description="批量调用 Dify API 处理多个问题")
+async def batch_query_api(request: BatchQueryRequest):
+    """
+    批量问题查询接口
+    
+    ## 功能说明
+    - 接收问题列表，并行调用 Dify API
+    - 返回每个问题的答案和完整响应
+    - 部分失败不影响其他请求
+    
+    ## 请求示例
+    ```json
+    {
+        "questions": ["问题1", "问题2"],
+        "api_url": "https://ai-aidq.sany.com.cn/v1/chat-messages",
+        "jwt": "app-xxx",
+        "jwt_chat": "Bearer xxx",
+        "max_workers": 5,
+        "timeout": 400
+    }
+    ```
+    
+    ## 响应示例
+    ```json
+    {
+        "success": true,
+        "results": [
+            {
+                "id": 1,
+                "question": "问题1",
+                "answer": "回答1",
+                "response": {...},
+                "status": "success",
+                "error": null,
+                "timestamp": "2024-01-01T00:00:00"
+            }
+        ],
+        "total": 2,
+        "success_count": 2,
+        "error_count": 0,
+        "took": 1234
+    }
+    ```
+    """
+    start_time = time.time()
+    
+    try:
+        logger.info(f"批量查询请求: {len(request.questions)} 个问题, max_workers={request.max_workers}, timeout={request.timeout}")
+        
+        # 验证问题列表
+        if not request.questions:
+            raise HTTPException(status_code=400, detail="问题列表不能为空")
+        
+        # 调用批量处理函数
+        results = batch_process_questions(
+            questions=request.questions,
+            api_url=request.api_url,
+            jwt_token=request.jwt,
+            jwt_chat=request.jwt_chat,
+            max_workers=request.max_workers,
+            timeout=request.timeout
+        )
+        
+        # 构建响应
+        batch_results = []
+        for r in results:
+            batch_results.append(BatchQueryResult(
+                id=r["id"],
+                question=r["question"],
+                answer=extract_answer(r.get("response")) if r["status"] == "success" else None,
+                response=r.get("response"),
+                status=r["status"],
+                error=r.get("error"),
+                timestamp=r["timestamp"]
+            ))
+        
+        took_ms = int((time.time() - start_time) * 1000)
+        success_count = sum(1 for r in results if r["status"] == "success")
+        error_count = len(results) - success_count
+        
+        logger.info(f"批量查询完成: 总计 {len(results)} 个问题, 成功 {success_count} 个, 失败 {error_count} 个, 耗时 {took_ms}ms")
+        
+        return BatchQueryResponse(
+            success=error_count == 0,
+            results=batch_results,
+            total=len(results),
+            success_count=success_count,
+            error_count=error_count,
+            took=took_ms
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"批量查询失败: {e}", exc_info=True)
+        took_ms = int((time.time() - start_time) * 1000)
+        raise HTTPException(status_code=500, detail=f"批量查询失败: {str(e)}") 

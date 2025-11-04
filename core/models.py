@@ -209,4 +209,37 @@ class ComprehensiveAnalysisResponse(BaseModel):
     success: bool = Field(..., description="是否成功")
     comprehensive_result: Optional[Dict[str, Any]] = Field(default=None, description="分析结果")
     error: Optional[str] = Field(default=None, description="错误信息")
-    took: Optional[int] = Field(default=None, description="耗时（毫秒）") 
+    took: Optional[int] = Field(default=None, description="耗时（毫秒）")
+
+
+# ==================== 批量查询相关模型 ====================
+
+class BatchQueryRequest(BaseModel):
+    """批量查询请求"""
+    questions: List[str] = Field(..., description="问题列表")
+    api_url: str = Field(..., description="Dify API 完整 URL")
+    jwt: str = Field(..., description="JWT token")
+    jwt_chat: str = Field(..., description="聊天JWT token")
+    max_workers: int = Field(default=5, ge=1, le=20, description="并发线程数")
+    timeout: int = Field(default=400, ge=10, le=600, description="请求超时时间（秒）")
+
+
+class BatchQueryResult(BaseModel):
+    """批量查询单个结果"""
+    id: int = Field(..., description="问题ID")
+    question: str = Field(..., description="问题文本")
+    answer: Optional[str] = Field(default=None, description="提取的答案")
+    response: Optional[Dict[str, Any]] = Field(default=None, description="完整API响应")
+    status: str = Field(..., description="状态: success/error")
+    error: Optional[str] = Field(default=None, description="错误信息")
+    timestamp: str = Field(..., description="处理时间")
+
+
+class BatchQueryResponse(BaseModel):
+    """批量查询响应"""
+    success: bool = Field(..., description="整体是否成功")
+    results: List[BatchQueryResult] = Field(..., description="查询结果列表")
+    total: int = Field(..., description="总问题数")
+    success_count: int = Field(..., description="成功数量")
+    error_count: int = Field(..., description="失败数量")
+    took: int = Field(..., description="总耗时（毫秒）") 

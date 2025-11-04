@@ -35,6 +35,14 @@
 - **维度值自动提取**: 自动从数据库提取并索引维度值
 - **多引擎初始化**: 同时初始化ES、AC自动机、相似度匹配器
 
+### 🔄 批量查询 API (新功能)
+
+- **批量处理**: 支持一次性处理多个问题
+- **并行执行**: 使用多线程并行调用 Dify API
+- **灵活配置**: 可自定义并发数和超时时间
+- **错误容错**: 部分失败不影响其他问题处理
+- **完整响应**: 返回每个问题的答案和完整 API 响应
+
 ## 📊 系统架构
 
 ```
@@ -223,6 +231,58 @@ curl -X POST "http://localhost:8082/api/search/dimension-values" \
     "size": 10
   }'
 ```
+
+### 🆕 批量查询 API
+
+批量查询 API 允许您一次性处理多个问题，并行调用 Dify API，适用于批量数据处理场景。
+
+```bash
+# 批量查询问题
+curl -X POST "http://localhost:8082/api/search/batch-query" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "questions": ["问题1", "问题2", "问题3"],
+    "api_url": "https://ai-aidq.sany.com.cn/v1/chat-messages",
+    "jwt": "app-xxx",
+    "jwt_chat": "Bearer xxx",
+    "max_workers": 5,
+    "timeout": 400
+  }'
+```
+
+**响应格式**:
+
+```json
+{
+    "success": true,
+    "results": [
+        {
+            "id": 1,
+            "question": "问题1",
+            "answer": "这是答案...",
+            "response": {...},
+            "status": "success",
+            "error": null,
+            "timestamp": "2024-01-01T12:00:00"
+        }
+    ],
+    "total": 3,
+    "success_count": 3,
+    "error_count": 0,
+    "took": 5234
+}
+```
+
+**参数说明**:
+
+- `questions`: 问题列表 (必填)
+- `api_url`: Dify API URL (必填)
+- `jwt`: JWT token (必填)
+- `jwt_chat`: 聊天 JWT token (必填)
+- `max_workers`: 并发线程数，范围 1-20 (默认: 5)
+- `timeout`: 超时时间（秒），范围 10-600 (默认: 400)
+
+详细文档请参考: [BATCH_QUERY_API.md](BATCH_QUERY_API.md)
 
 ### 🆕 数据库管理
 
