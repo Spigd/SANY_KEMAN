@@ -171,7 +171,7 @@ class EnhancedDimensionExtractor:
                 values = extractor.extract_dimension_values(
                     field.table_name,
                     field.column_name,
-                    field.display_name,
+                    field.chinese_name,
                     max_values_per_column
                 )
                 dimension_values.extend(values)

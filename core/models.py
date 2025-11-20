@@ -11,8 +11,8 @@ class MetadataField(BaseModel):
     """元数据字段模型"""
     table_name: str = Field(..., description="所属表名")
     column_name: str = Field(..., description="列名")
-    display_name: str = Field(..., description="显示名称")
-    synonyms: List[str] = Field(default_factory=list, description="同义词列表")
+    chinese_name: str = Field(..., description="中文名称")
+    alias: List[str] = Field(default_factory=list, description="别名列表")
     description: str = Field(default="", description="字段描述")
     data_type: str = Field(default="text", description="数据类型")
     field_type: str = Field(default="metric", description="字段类型：dimension/metric")
@@ -29,7 +29,7 @@ class DimensionValue(BaseModel):
     """维度值模型 - 用于存储维度列的具体值"""
     table_name: str = Field(..., description="所属表名")
     column_name: str = Field(..., description="列名")
-    display_name: str = Field(..., description="字段显示名称")
+    chinese_name: str = Field(..., description="维度的中文名称")
     value: str = Field(..., description="维度值")
     value_hash: Optional[str] = Field(default=None, description="值的哈希，用于去重")
     field_type: str = Field(default="dimension", description="字段类型，固定为dimension")
@@ -39,7 +39,7 @@ class DimensionValue(BaseModel):
     
     def get_search_text(self) -> str:
         """获取用于搜索的文本"""
-        return f"{self.display_name} {self.value}"
+        return f"{self.chinese_name} {self.value}"
 
 
 class SearchResult(BaseModel):

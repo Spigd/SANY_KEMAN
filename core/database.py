@@ -265,14 +265,14 @@ class DimensionExtractor:
         self.db_connection = db_connection
     
     def extract_dimension_values(self, table_name: str, column_name: str, 
-                               display_name: str, limit: Optional[int] = 1000) -> List[DimensionValue]:
+                               chinese_name: str, limit: Optional[int] = 1000) -> List[DimensionValue]:
         """
         从数据库提取维度值
         
         Args:
             table_name: 表名
             column_name: 列名
-            display_name: 显示名称
+            chinese_name: 中文名称
             limit: 限制提取数量
             
         Returns:
@@ -302,7 +302,7 @@ class DimensionExtractor:
                 dimension_value = DimensionValue(
                     table_name=table_name,
                     column_name=column_name,
-                    display_name=display_name,
+                    chinese_name=chinese_name,
                     value=value_str,
                     value_hash=value_hash,
                     frequency=frequency,
@@ -340,7 +340,7 @@ class DimensionExtractor:
             dimension_values = self.extract_dimension_values(
                 field.table_name,
                 field.column_name,
-                field.display_name,
+                field.chinese_name,
                 limit_per_column
             )
             all_dimension_values.extend(dimension_values)

@@ -404,7 +404,7 @@ async def get_search_suggestions(
         for result in response.results:
             field = result.field
             suggestions.append({
-                "text": field.display_name,
+                "text": field.chinese_name,
                 "value": field.column_name,
                 "table": field.table_name,
                 "score": result.score,

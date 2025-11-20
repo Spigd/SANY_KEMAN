@@ -55,47 +55,49 @@ class MetadataLoader:
     def _row_to_metadata_field(self, row: pd.Series) -> Optional[MetadataField]:
         """将DataFrame行转换为MetadataField对象"""
         try:
-            # 处理必需字段
+            # 处理必需字段 - 支持新旧字段名
             table_name = str(row.get('table_name', '')).strip()
             column_name = str(row.get('column_name', '')).strip()
-            display_name = str(row.get('display_name', '')).strip()
+            
+            # 优先使用新字段名chinese_name，如果不存在则使用旧字段名display_name
+            chinese_name = str(row.get('chinese_name', row.get('display_name', ''))).strip()
             
             # 跳过无效行
-            if not table_name or not column_name or not display_name:
+            if not table_name or not column_name or not chinese_name:
                 return None
             
             # 过滤掉明显无效的数据
-            if table_name == 'nan' or column_name == 'nan' or display_name == 'nan':
+            if table_name == 'nan' or column_name == 'nan' or chinese_name == 'nan':
                 return None
             
-            # 处理同义词 - 从JSON字符串解析
-            synonyms = []
-            synonyms_str = str(row.get('alias', '')).strip()
-            if synonyms_str and synonyms_str != 'nan':
+            # 处理别名 - 优先使用alias，如果不存在则使用旧的synonyms字段
+            alias = []
+            alias_str = str(row.get('alias', row.get('synonyms', ''))).strip()
+            if alias_str and alias_str != 'nan':
                 try:
-                    # 尝试解析JSON格式的同义词
-                    if synonyms_str.startswith('[') and synonyms_str.endswith(']'):
-                        synonyms = json.loads(synonyms_str)
-                    elif synonyms_str.startswith('"[') and synonyms_str.endswith(']"'):
+                    # 尝试解析JSON格式的别名
+                    if alias_str.startswith('[') and alias_str.endswith(']'):
+                        alias = json.loads(alias_str)
+                    elif alias_str.startswith('"[') and alias_str.endswith(']"'):
                         # 处理被双引号包围的JSON
-                        clean_str = synonyms_str.strip('"')
-                        synonyms = json.loads(clean_str)
+                        clean_str = alias_str.strip('"')
+                        alias = json.loads(clean_str)
                     else:
                         # 如果不是JSON格式，按逗号或分号分割
                         separators = [',', '，', ';', '；', '|']
                         for sep in separators:
-                            if sep in synonyms_str:
-                                synonyms = [s.strip() for s in synonyms_str.split(sep) if s.strip()]
+                            if sep in alias_str:
+                                alias = [s.strip() for s in alias_str.split(sep) if s.strip()]
                                 break
                         else:
-                            # 如果没有分隔符，作为单个同义词
-                            synonyms = [synonyms_str]
+                            # 如果没有分隔符，作为单个别名
+                            alias = [alias_str]
                 except (json.JSONDecodeError, ValueError):
                     # JSON解析失败，尝试其他格式
-                    synonyms = [s.strip() for s in synonyms_str.replace('，', ',').split(',') if s.strip()]
+                    alias = [s.strip() for s in alias_str.replace('，', ',').split(',') if s.strip()]
             
-            # 清理同义词列表
-            synonyms = [syn for syn in synonyms if syn and syn != 'nan' and len(syn.strip()) > 0]
+            # 清理别名列表
+            alias = [a for a in alias if a and a != 'nan' and len(a.strip()) > 0]
             
             # 处理描述
             description = str(row.get('column_comment', '')).strip()
@@ -153,8 +155,8 @@ class MetadataLoader:
             field = MetadataField(
                 table_name=table_name,
                 column_name=column_name,
-                display_name=display_name,
-                synonyms=synonyms,
+                chinese_name=chinese_name,
+                alias=alias,
                 description=description,
                 data_type=data_type,
                 field_type=field_type,
@@ -199,7 +201,7 @@ class MetadataLoader:
         
         # 根据字段名推断
         column_name = str(row.get('column_name', '')).strip().lower()
-        display_name = str(row.get('desplay_name', '')).strip().lower()
+        chinese_name = str(row.get('chinese_name', row.get('display_name', ''))).strip().lower()
         
         # 常见维度字段关键词
         dimension_keywords = [
@@ -210,7 +212,7 @@ class MetadataLoader:
         ]
         
         for keyword in dimension_keywords:
-            if keyword in column_name or keyword in display_name:
+            if keyword in column_name or keyword in chinese_name:
                 return 'dimension'
         
         return 'metric'
@@ -288,8 +290,8 @@ class MetadataLoader:
                 sample_data.append({
                     'table_name': field.table_name,
                     'column_name': field.column_name,
-                    'display_name': field.display_name,
-                    'synonyms': field.synonyms[:3] if field.synonyms else [],  # 只显示前3个同义词
+                    'chinese_name': field.chinese_name,
+                    'alias': field.alias[:3] if field.alias else [],  # 只显示前3个别名
                     'description': field.description[:100] + '...' if len(field.description) > 100 else field.description,
                     'is_entity': field.is_entity,
                     'is_enabled': field.is_enabled,

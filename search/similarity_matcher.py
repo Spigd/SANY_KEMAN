@@ -37,10 +37,10 @@ class SimilarityMatcher:
                 # 收集所有可搜索的文本
                 searchable_texts = []
                 
-                if field.display_name:
-                    searchable_texts.append(field.display_name)
+                if field.chinese_name:
+                    searchable_texts.append(field.chinese_name)
                 
-                searchable_texts.extend(field.synonyms)
+                searchable_texts.extend(field.alias)
                 
                 if field.description:
                     searchable_texts.append(field.description)
@@ -318,8 +318,8 @@ class SimilarityMatcher:
                 field = result.field
                 
                 entity = {
-                    'entity': field.display_name,
-                    'original_field': field.display_name,
+                    'entity': field.chinese_name,
+                    'original_field': field.chinese_name,
                     'table': field.table_name,
                     'column': field.column_name,
                     'confidence': min(result.score, 1.0),  # 确保置信度不超过1

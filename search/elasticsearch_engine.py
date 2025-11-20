@@ -143,7 +143,7 @@ class ElasticsearchEngine:
                                 }
                             }
                         },
-                        "display_name": {
+                        "chinese_name": {
                             "type": "text",
                             "analyzer": analyzer,
                             "search_analyzer": search_analyzer,
@@ -155,7 +155,7 @@ class ElasticsearchEngine:
                                 }
                             }
                         },
-                        "synonyms": {
+                        "alias": {
                             "type": "text",
                             "analyzer": analyzer,
                             "search_analyzer": search_analyzer,
@@ -263,7 +263,7 @@ class ElasticsearchEngine:
                                 }
                             }
                         },
-                        "display_name": {
+                        "chinese_name": {
                             "type": "text",
                             "analyzer": analyzer,
                             "search_analyzer": search_analyzer,
@@ -605,8 +605,8 @@ class ElasticsearchEngine:
                     "multi_match": {
                         "query": query,
                         "fields": [
-                            "display_name^4",
-                            "synonyms^3",
+                            "chinese_name^4",
+                            "alias^3",
                             "description^2",
                             "enum_values^2",
                             "sample_data^1"
@@ -622,10 +622,10 @@ class ElasticsearchEngine:
                 {
                     "bool": {
                         "should": [
-                            {"match_phrase": {"display_name": query}},
-                            {"match_phrase": {"synonyms": query}},
-                            {"term": {"display_name.keyword": query}},
-                            {"terms": {"synonyms.exact": [query]}},
+                            {"match_phrase": {"chinese_name": query}},
+                            {"match_phrase": {"alias": query}},
+                            {"term": {"chinese_name.keyword": query}},
+                            {"terms": {"alias.exact": [query]}},
                             {"match_phrase": {"description": query}},
                             {"match_phrase": {"enum_values": query}},
                             {"match_phrase": {"sample_data": query}}
@@ -668,8 +668,8 @@ class ElasticsearchEngine:
         if highlight:
             search_body["highlight"] = {
                 "fields": {
-                    "display_name": {},
-                    "synonyms": {},
+                    "chinese_name": {},
+                    "alias": {},
                     "description": {},
                     "enum_values": {},
                     "sample_data": {}
@@ -795,7 +795,7 @@ class ElasticsearchEngine:
                 field = MetadataField(
                     table_name=dimension_value_data['table_name'],
                     column_name=dimension_value_data['column_name'],
-                    display_name=dimension_value_data['display_name'],
+                    chinese_name=dimension_value_data['chinese_name'],
                     field_type='dimension',
                     data_type=dimension_value_data.get('data_type', 'text'),
                     description=f"维度值: {dimension_value_data['value']}"
@@ -853,6 +853,7 @@ class ElasticsearchEngine:
         """构建维度值搜索查询"""
         
         # 根据分词设置构建查询
+        # 维度值搜索：只匹配value字段
         if use_tokenization:
             # 使用分词的查询
             must_queries = [
@@ -860,9 +861,7 @@ class ElasticsearchEngine:
                     "multi_match": {
                         "query": query,
                         "fields": [
-                            "value^4",
-                            "display_name^3",
-                            "search_text^2"
+                            "value^4"
                         ],
                         "type": "best_fields",
                         "fuzziness": "AUTO"
@@ -877,9 +876,7 @@ class ElasticsearchEngine:
                         "should": [
                             {"match_phrase": {"value": query}},
                             {"term": {"value.keyword": query}},
-                            {"term": {"value.exact": query}},
-                            {"match_phrase": {"display_name": query}},
-                            {"match_phrase": {"search_text": query}}
+                            {"term": {"value.exact": query}}
                         ],
                         "minimum_should_match": 1
                     }
@@ -919,9 +916,7 @@ class ElasticsearchEngine:
         if highlight:
             search_body["highlight"] = {
                 "fields": {
-                    "value": {"pre_tags": ["<em>"], "post_tags": ["</em>"]},
-                    "display_name": {"pre_tags": ["<em>"], "post_tags": ["</em>"]},
-                    "search_text": {"pre_tags": ["<em>"], "post_tags": ["</em>"]}
+                    "value": {"pre_tags": ["<em>"], "post_tags": ["</em>"]}
                 }
             }
         
@@ -1231,6 +1226,7 @@ class ElasticsearchEngine:
         """构建指标搜索查询"""
         
         # 根据分词设置构建查询
+        # 指标搜索：只匹配metric_name、metric_alias和related_entities
         if use_tokenization:
             # 使用分词的查询
             must_queries = [
@@ -1240,12 +1236,7 @@ class ElasticsearchEngine:
                         "fields": [
                             "metric_name^5",
                             "metric_alias^4",
-                            "related_entities^3",
-                            "business_definition^2",
-                            "depends_on_tables",
-                            "depends_on_columns",
-                            "metric_sql",
-                            "search_text"
+                            "related_entities^3"
                         ],
                         "type": "best_fields",
                         "fuzziness": "AUTO"
@@ -1262,11 +1253,7 @@ class ElasticsearchEngine:
                             {"term": {"metric_name.keyword": query}},
                             {"term": {"metric_name.exact": query}},
                             {"match_phrase": {"metric_alias": query}},
-                            {"match_phrase": {"related_entities": query}},
-                            {"match_phrase": {"business_definition": query}},
-                            {"match_phrase": {"depends_on_tables": query}},
-                            {"match_phrase": {"depends_on_columns": query}},
-                            {"match_phrase": {"metric_sql": query}}
+                            {"match_phrase": {"related_entities": query}}
                         ],
                         "minimum_should_match": 1
                     }
@@ -1304,12 +1291,7 @@ class ElasticsearchEngine:
                 "fields": {
                     "metric_name": {"pre_tags": ["<em>"], "post_tags": ["</em>"]},
                     "metric_alias": {"pre_tags": ["<em>"], "post_tags": ["</em>"]},
-                    "related_entities": {"pre_tags": ["<em>"], "post_tags": ["</em>"]},
-                    "business_definition": {"pre_tags": ["<em>"], "post_tags": ["</em>"]},
-                    "depends_on_tables": {"pre_tags": ["<em>"], "post_tags": ["</em>"]},
-                    "depends_on_columns": {"pre_tags": ["<em>"], "post_tags": ["</em>"]},
-                    "metric_sql": {"pre_tags": ["<em>"], "post_tags": ["</em>"]},
-                    "search_text": {"pre_tags": ["<em>"], "post_tags": ["</em>"]}
+                    "related_entities": {"pre_tags": ["<em>"], "post_tags": ["</em>"]}
                 }
             }
         

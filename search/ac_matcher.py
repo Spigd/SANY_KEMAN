@@ -41,21 +41,21 @@ class ACMatcher:
                 
                 field_id = f"{field.table_name}_{field.column_name}"
                 
-                # 添加显示名称
-                if field.display_name:
-                    search_terms[field.display_name.lower()] = {
+                # 添加中文名称
+                if field.chinese_name:
+                    search_terms[field.chinese_name.lower()] = {
                         'field': field,
-                        'match_type': 'display_name',
-                        'original_text': field.display_name
+                        'match_type': 'chinese_name',
+                        'original_text': field.chinese_name
                     }
                 
-                # 添加同义词
-                for synonym in field.synonyms:
-                    if synonym:
-                        search_terms[synonym.lower()] = {
+                # 添加别名
+                for alias_item in field.alias:
+                    if alias_item:
+                        search_terms[alias_item.lower()] = {
                             'field': field,
-                            'match_type': 'synonym',
-                            'original_text': synonym
+                            'match_type': 'alias',
+                            'original_text': alias_item
                         }
                 
                 # 添加列名（如果包含中文或有意义的英文）
@@ -226,8 +226,8 @@ class ACMatcher:
         
         # 根据匹配类型调整权重
         type_weights = {
-            'display_name': 2.0,
-            'synonym': 1.8,
+            'chinese_name': 2.0,
+            'alias': 1.8,
             'column_name': 1.5,
             'enum_value': 1.3,
             'description': 1.0
@@ -282,7 +282,7 @@ class ACMatcher:
                 
                 entity = {
                     'entity': info['original_text'],
-                    'original_field': field.display_name,
+                    'original_field': field.chinese_name,
                     'table': field.table_name,
                     'column': field.column_name,
                     'confidence': self._calculate_score(text, info['original_text'], info['match_type']) / 10.0,
