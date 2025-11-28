@@ -607,9 +607,7 @@ class ElasticsearchEngine:
                         "fields": [
                             "chinese_name^4",
                             "alias^3",
-                            "description^2",
-                            "enum_values^2",
-                            "sample_data^1"
+                            "description^2"
                         ],
                         "type": "best_fields",
                         "fuzziness": "AUTO"
@@ -626,9 +624,7 @@ class ElasticsearchEngine:
                             {"match_phrase": {"alias": query}},
                             {"term": {"chinese_name.keyword": query}},
                             {"terms": {"alias.exact": [query]}},
-                            {"match_phrase": {"description": query}},
-                            {"match_phrase": {"enum_values": query}},
-                            {"match_phrase": {"sample_data": query}}
+                            {"match_phrase": {"description": query}}
                         ],
                         "minimum_should_match": 1
                     }
@@ -670,9 +666,7 @@ class ElasticsearchEngine:
                 "fields": {
                     "chinese_name": {},
                     "alias": {},
-                    "description": {},
-                    "enum_values": {},
-                    "sample_data": {}
+                    "description": {}
                 }
             }
         
