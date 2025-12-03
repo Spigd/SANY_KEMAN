@@ -32,14 +32,30 @@ class DataSyncScheduler:
         """
         self.hybrid_searcher = hybrid_searcher
         self.scheduler = BackgroundScheduler()
-        self.sync_interval_hours = config.API_SYNC_INTERVAL
+        
+        # 判断同步模式
+        interval = config.API_SYNC_INTERVAL
+        if interval and interval > 0:
+            # 间隔模式
+            self.sync_mode = 'interval'
+            self.sync_interval_hours = interval
+            self.sync_cron_time = None
+        else:
+            # 定时模式（每天早上5点）
+            self.sync_mode = 'cron'
+            self.sync_interval_hours = None
+            self.sync_cron_time = '05:00'
+        
         self.table_ids = self._parse_table_ids()
         self.sync_lock = threading.Lock()
         self.last_sync_time = None
         self.last_sync_status = None
         self.is_syncing = False
         
-        logger.info(f"数据同步调度器初始化: 间隔={self.sync_interval_hours}小时, 表ID={self.table_ids}")
+        if self.sync_mode == 'interval':
+            logger.info(f"数据同步调度器初始化: 模式=间隔同步, 间隔={self.sync_interval_hours}小时, 表ID={self.table_ids}")
+        else:
+            logger.info(f"数据同步调度器初始化: 模式=定时同步, 时间={self.sync_cron_time}, 表ID={self.table_ids}")
     
     def _parse_table_ids(self) -> List[int]:
         """解析表ID列表"""
@@ -70,17 +86,32 @@ class DataSyncScheduler:
             # 不在启动时立即同步，避免与手动同步冲突
             # 用户可以通过手动API触发首次同步，或等待定时任务执行
             
-            # 设置定时任务
+            # 根据模式设置不同的触发器
+            if self.sync_mode == 'interval':
+                # 间隔模式：按小时间隔执行
+                trigger = IntervalTrigger(hours=self.sync_interval_hours)
+                logger.info(f"✅ 使用间隔触发器，每 {self.sync_interval_hours} 小时执行一次")
+            else:
+                # 定时模式：每天固定时间执行
+                from apscheduler.triggers.cron import CronTrigger
+                hour, minute = self.sync_cron_time.split(':')
+                trigger = CronTrigger(hour=int(hour), minute=int(minute))
+                logger.info(f"✅ 使用定时触发器，每天 {self.sync_cron_time} 执行")
+            
             self.scheduler.add_job(
                 self.sync_data,
-                trigger=IntervalTrigger(hours=self.sync_interval_hours),
+                trigger=trigger,
                 id='data_sync_job',
                 name='数据同步任务',
                 replace_existing=True
             )
             
             self.scheduler.start()
-            logger.info(f"✅ 数据同步调度器已启动，每 {self.sync_interval_hours} 小时自动执行同步")
+            
+            if self.sync_mode == 'interval':
+                logger.info(f"✅ 数据同步调度器已启动，每 {self.sync_interval_hours} 小时自动执行同步")
+            else:
+                logger.info(f"✅ 数据同步调度器已启动，每天 {self.sync_cron_time} 自动执行同步")
             
         except Exception as e:
             logger.error(f"启动调度器失败: {e}")
@@ -431,13 +462,21 @@ class DataSyncScheduler:
     
     def get_status(self) -> Dict[str, Any]:
         """获取同步状态"""
-        return {
+        status = {
             'enabled': config.API_SYNC_ENABLED,
-            'interval_hours': self.sync_interval_hours,
+            'sync_mode': self.sync_mode,
             'table_ids': self.table_ids,
             'is_syncing': self.is_syncing,
             'last_sync_time': self.last_sync_time.isoformat() if self.last_sync_time else None,
             'last_sync_status': self.last_sync_status,
             'scheduler_running': self.scheduler.running if self.scheduler else False
         }
+        
+        # 根据模式添加不同的配置信息
+        if self.sync_mode == 'interval':
+            status['interval_hours'] = self.sync_interval_hours
+        else:
+            status['cron_time'] = self.sync_cron_time
+        
+        return status
 

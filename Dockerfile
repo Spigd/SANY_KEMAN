@@ -58,7 +58,7 @@ ENV METADATA_API_BASE_URL=http://localhost:8080 \
 
 # API数据同步配置
 ENV API_SYNC_ENABLED=false \
-    API_SYNC_INTERVAL=2 \
+    API_SYNC_INTERVAL="" \
     API_TABLE_IDS="" \
     API_METRIC_IDS=""
 
