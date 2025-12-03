@@ -51,7 +51,15 @@ class Config:
         
         # API数据同步配置
         self.API_SYNC_ENABLED = os.getenv('API_SYNC_ENABLED', 'true').lower() == 'true'
-        self.API_SYNC_INTERVAL = float(os.getenv('API_SYNC_INTERVAL', ''))  # 小时
+        # 解析同步间隔，如果为空或无效则返回None（将使用定时模式）
+        interval_str = os.getenv('API_SYNC_INTERVAL', '').strip()
+        if interval_str:
+            try:
+                self.API_SYNC_INTERVAL = float(interval_str)
+            except ValueError:
+                self.API_SYNC_INTERVAL = None
+        else:
+            self.API_SYNC_INTERVAL = None
         self.API_TABLE_IDS = os.getenv('API_TABLE_IDS', '268,269,270')  # 逗号分隔的表ID列表
         self.API_METRIC_IDS = os.getenv('API_METRIC_IDS', '171,172,357')  # 逗号分隔的指标ID列表，如 "171,172"
         
