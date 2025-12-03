@@ -15,14 +15,10 @@ class MetadataField(BaseModel):
     alias: List[str] = Field(default_factory=list, description="别名列表")
     description: str = Field(default="", description="字段描述")
     data_type: str = Field(default="text", description="数据类型")
-    field_type: str = Field(default="metric", description="字段类型：dimension/metric")
-    is_entity: bool = Field(default=False, description="是否实体字段")
-    is_enabled: bool = Field(default=True, description="是否启用")
-    is_enum: bool = Field(default=False, description="是否枚举类型")
-    enum_values: Dict[str, str] = Field(default_factory=dict, description="枚举值映射")
+    field_type: str = Field(default="METRIC", description="字段类型：DIMENSION/METRIC/ATTRIBUTE")
+    is_effect: bool = Field(default=True, description="是否有效")
+    data_format: str = Field(default="", description="数据格式")
     sample_data: Optional[str] = Field(default=None, description="示例数据")
-    created_at: Optional[datetime] = Field(default=None, description="创建时间")
-    updated_at: Optional[datetime] = Field(default=None, description="更新时间")
 
 
 class DimensionValue(BaseModel):
@@ -67,7 +63,6 @@ class SearchRequest(BaseModel):
     """搜索请求"""
     query: str = Field(..., description="搜索查询")
     table_name: Optional[Union[str, List[str]]] = Field(default=None, description="限制搜索的表名，可以是单个表名或表名列表")
-    entity_only: bool = Field(default=False, description="仅搜索实体字段")
     enabled_only: bool = Field(default=True, description="仅搜索启用字段")
     size: int = Field(default=10, ge=1, le=100, description="返回结果数量")
     use_tokenization: bool = Field(default=True, description="是否对查询进行分词处理")
@@ -79,7 +74,6 @@ class SearchRequest(BaseModel):
 class IndexStats(BaseModel):
     """索引统计信息"""
     total_fields: int = Field(..., description="总字段数")
-    entity_fields: int = Field(..., description="实体字段数")
     enabled_fields: int = Field(..., description="启用字段数")
     tables_count: int = Field(..., description="表数量")
     last_updated: Optional[datetime] = Field(default=None, description="最后更新时间")
@@ -136,11 +130,6 @@ class Metric(BaseModel):
     depends_on_tables: List[str] = Field(default_factory=list, description="依赖的物理表列表")
     depends_on_columns: List[str] = Field(default_factory=list, description="依赖的字段列表")
     business_definition: str = Field(default="", description="业务定义/计算逻辑说明")
-    metric_type: str = Field(default="", description="指标类型：count/rate/avg")
-    status: str = Field(default="active", description="状态：active/inactive")
-    owner: Optional[str] = Field(default=None, description="负责人")
-    created_at: Optional[datetime] = Field(default=None, description="创建时间")
-    updated_at: Optional[datetime] = Field(default=None, description="更新时间")
     
     def get_search_text(self) -> str:
         """获取用于搜索的文本"""
@@ -172,8 +161,6 @@ class MetricSearchResponse(BaseModel):
 class MetricSearchRequest(BaseModel):
     """Metric搜索请求"""
     query: str = Field(..., description="搜索查询")
-    status: Optional[str] = Field(default=None, description="过滤状态：active/inactive")
-    metric_type: Optional[str] = Field(default=None, description="过滤指标类型：count/rate/avg")
     size: int = Field(default=10, ge=1, le=100, description="返回结果数量")
     use_tokenization: bool = Field(default=True, description="是否对查询进行分词处理")
     tokenizer_type: str = Field(default="ik_max_word", description="分词器类型")

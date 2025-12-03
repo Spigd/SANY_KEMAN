@@ -22,7 +22,7 @@ try:
 except ImportError:
     POSTGRESQL_AVAILABLE = False
 
-from core.models import DimensionValue
+from core.models import DimensionValue, MetadataField
 
 logger = logging.getLogger(__name__)
 

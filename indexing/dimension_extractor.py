@@ -54,7 +54,7 @@ class EnhancedDimensionExtractor:
             return []
         
         # 筛选维度字段
-        dimension_fields = [f for f in metadata_fields if f.field_type == 'dimension' and f.is_enabled]
+        dimension_fields = [f for f in metadata_fields if f.field_type == 'DIMENSION' and f.is_effect]
         logger.info(f"待提取维度值的字段：{dimension_fields}")
         
         if not dimension_fields:

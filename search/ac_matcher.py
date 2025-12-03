@@ -36,7 +36,7 @@ class ACMatcher:
             search_terms = {}
             
             for field in fields:
-                if not field.is_enabled:
+                if not field.is_effect:
                     continue
                 
                 field_id = f"{field.table_name}_{field.column_name}"
@@ -58,33 +58,19 @@ class ACMatcher:
                             'original_text': alias_item
                         }
                 
-                # 添加列名（如果包含中文或有意义的英文）
-                if field.column_name and len(field.column_name) > 2:
-                    search_terms[field.column_name.lower()] = {
-                        'field': field,
-                        'match_type': 'column_name',
-                        'original_text': field.column_name
-                    }
-                
-                # 添加描述中的关键词（简单处理）
+                # 添加描述中的关键词（分词处理）
                 if field.description:
-                    desc_words = field.description.split()
+                    # 简单分词：按空格、逗号、句号等分割
+                    import re
+                    desc_words = re.split(r'[\s,，.。;；:：、]+', field.description)
                     for word in desc_words:
-                        if len(word) > 1:
+                        word = word.strip()
+                        if len(word) > 1:  # 只添加长度大于1的词
                             search_terms[word.lower()] = {
                                 'field': field,
                                 'match_type': 'description',
                                 'original_text': word
                             }
-                
-                # 添加枚举值
-                for key, value in field.enum_values.items():
-                    if value and len(value) > 1:
-                        search_terms[value.lower()] = {
-                            'field': field,
-                            'match_type': 'enum_value',
-                            'original_text': value
-                        }
             
             # 将搜索词添加到AC自动机
             for idx, (term, info) in enumerate(search_terms.items()):
@@ -103,7 +89,7 @@ class ACMatcher:
             return False
     
     def search_fields(self, query: str, table_name: Optional[Union[str, List[str]]] = None,
-                     entity_only: bool = False, enabled_only: bool = True,
+                     enabled_only: bool = True,
                      size: int = 10, use_tokenization: bool = True) -> SearchResponse:
         """
         使用AC自动机搜索字段
@@ -111,7 +97,6 @@ class ACMatcher:
         Args:
             query: 搜索查询
             table_name: 限制搜索的表名
-            entity_only: 仅搜索实体字段
             enabled_only: 仅搜索启用字段
             size: 返回结果数量
             use_tokenization: 是否使用分词（AC自动机忽略此参数）
@@ -149,10 +134,7 @@ class ACMatcher:
                         if field.table_name != table_name:
                             continue
                 
-                if entity_only and not field.is_entity:
-                    continue
-                
-                if enabled_only and not field.is_enabled:
+                if enabled_only and not field.is_effect:
                     continue
                 
                 # 计算匹配分数
@@ -259,48 +241,3 @@ class ACMatcher:
         final_score = base_score * weight * exact_bonus * length_bonus
         return round(final_score, 3)
     
-    def extract_entities(self, text: str) -> List[Dict[str, Any]]:
-        """
-        从文本中提取实体（兼容接口）
-        
-        Args:
-            text: 输入文本
-        """
-        if not self.initialized or not self.automaton:
-            return []
-        
-        entities = []
-        text_lower = text.lower()
-        
-        try:
-            for end_index, (pattern_idx, info) in self.automaton.iter(text_lower):
-                field = info['field']
-                
-                # 只返回实体字段
-                if not field.is_entity:
-                    continue
-                
-                entity = {
-                    'entity': info['original_text'],
-                    'original_field': field.chinese_name,
-                    'table': field.table_name,
-                    'column': field.column_name,
-                    'confidence': self._calculate_score(text, info['original_text'], info['match_type']) / 10.0,
-                    'match_type': f"ac_{info['match_type']}",
-                    'start_pos': end_index - len(info['original_text']) + 1,
-                    'end_pos': end_index
-                }
-                entities.append(entity)
-            
-            # 按置信度排序并去重
-            unique_entities = {}
-            for entity in entities:
-                key = entity['entity'].lower()
-                if key not in unique_entities or entity['confidence'] > unique_entities[key]['confidence']:
-                    unique_entities[key] = entity
-            
-            return sorted(unique_entities.values(), key=lambda x: x['confidence'], reverse=True)
-            
-        except Exception as e:
-            logger.error(f"AC实体提取失败: {e}")
-            return [] 

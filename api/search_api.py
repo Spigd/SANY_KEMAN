@@ -90,10 +90,11 @@ def remove_time_from_query(query: str) -> str:
 # 全局混合搜索器实例
 _hybrid_searcher = None
 _initialization_attempted = False
+_data_sync_scheduler = None
 
 def get_hybrid_searcher() -> HybridSearcher:
     """获取混合搜索器实例 - 支持自动初始化和索引创建"""
-    global _hybrid_searcher, _initialization_attempted
+    global _hybrid_searcher, _initialization_attempted, _data_sync_scheduler
     
     if _hybrid_searcher is None:
         logger.info("创建混合搜索器实例...")
@@ -108,60 +109,76 @@ def get_hybrid_searcher() -> HybridSearcher:
         need_initialization = True
         if _hybrid_searcher.es_engine:
             try:
+                # 检查字段索引
+                fields_exist = False
+                fields_count = 0
                 if _hybrid_searcher.es_engine.index_exists():
-                    # 检查索引是否有数据
                     count_response = _hybrid_searcher.es_engine.es.count(
                         index=_hybrid_searcher.es_engine.fields_index_name
-                    )
-                    existing_count = count_response.get('count', 0)
-                    
-                    if existing_count > 0:
-                        logger.info(f"发现已存在的索引，包含 {existing_count} 条数据")
-                        
-                        # 标记搜索器为已初始化
-                        _hybrid_searcher.initialized = True
-                        
-                        # 检查是否需要初始化AC自动机和相似度匹配器
-                        need_other_engines = (
-                            (_hybrid_searcher.ac_matcher and not _hybrid_searcher.ac_matcher.initialized) or
-                            (_hybrid_searcher.similarity_matcher and not _hybrid_searcher.similarity_matcher.initialized)
-                        )
-                        
-                        if need_other_engines:
-                            logger.info("初始化AC自动机和相似度匹配器...")
-                            try:
-                                from indexing.data_loader import MetadataLoader
-                                loader = MetadataLoader()
-                                fields = loader.load_from_excel()
+                    ) 
+                    fields_count = count_response.get('count', 0)
+                    fields_exist = fields_count > 0
                 
-                                if fields:
-                                    # 初始化AC自动机
-                                    if _hybrid_searcher.ac_matcher and not _hybrid_searcher.ac_matcher.initialized:
-                                        logger.info('  - 初始化AC自动机...')
-                                        _hybrid_searcher.ac_matcher.initialize(fields)
-                                        logger.info('  ✅ AC自动机初始化完成')
+                # 检查指标索引
+                metrics_exist = False
+                metrics_count = 0
+                if _hybrid_searcher.es_engine.metric_index_exists():
+                    count_response = _hybrid_searcher.es_engine.es.count(
+                        index=_hybrid_searcher.es_engine.metric_index_name
+                    )
+                    metrics_count = count_response.get('count', 0)
+                    metrics_exist = metrics_count > 0
+                
+                # 检查维度值索引
+                dimension_values_exist = False
+                dimension_values_count = 0
+                if _hybrid_searcher.es_engine.dimension_values_index_exists():
+                    count_response = _hybrid_searcher.es_engine.es.count(
+                        index=_hybrid_searcher.es_engine.dimension_values_index_name
+                    )
+                    dimension_values_count = count_response.get('count', 0)
+                    dimension_values_exist = dimension_values_count > 0
+                
+                # 输出索引状态
+                if fields_exist or metrics_exist or dimension_values_exist:
+                    status_msg = []
+                    if fields_exist:
+                        status_msg.append(f"字段索引({fields_count}条)")
+                    if metrics_exist:
+                        status_msg.append(f"指标索引({metrics_count}条)")
+                    if dimension_values_exist:
+                        status_msg.append(f"维度值索引({dimension_values_count}条)")
+                    logger.info(f"发现已存在的索引: {', '.join(status_msg)}")
+                
+                # 只有当三个索引都存在且有数据时，才跳过初始化
+                if fields_exist and metrics_exist and dimension_values_exist:
+                    logger.info("✅ 字段索引、指标索引和维度值索引都已存在且有数据")
                     
-                                    # 初始化相似度匹配器
-                                    if _hybrid_searcher.similarity_matcher and not _hybrid_searcher.similarity_matcher.initialized:
-                                        logger.info('  - 初始化相似度匹配器...')
-                                        _hybrid_searcher.similarity_matcher.initialize(fields)
-                                        logger.info('  ✅ 相似度匹配器初始化完成')
+                    # 标记搜索器为已初始化
+                    _hybrid_searcher.initialized = True
                     
-                                    # 保存字段数据
-                                    _hybrid_searcher.fields_data = fields
-                                else:
-                                    logger.warning("无法加载字段数据，AC自动机和相似度匹配器未初始化")
-                                    
-                            except Exception as e:
-                                logger.warning(f'初始化其他搜索引擎时出错: {e}')
-                        else:
-                            logger.info("✅ AC自动机和相似度匹配器已初始化，跳过")
-                        
-                        need_initialization = False
+                    # 检查是否需要初始化AC自动机和相似度匹配器
+                    need_other_engines = (
+                        (_hybrid_searcher.ac_matcher and not _hybrid_searcher.ac_matcher.initialized) or
+                        (_hybrid_searcher.similarity_matcher and not _hybrid_searcher.similarity_matcher.initialized)
+                    )
+                    
+                    if need_other_engines:
+                        # 当索引已存在时，AC自动机和相似度匹配器将延迟初始化
+                        # 避免在启动时重复从API加载数据
+                        logger.info("检测到索引已存在，AC自动机和相似度匹配器将在首次搜索或同步时初始化")
                     else:
-                        logger.info("索引存在但无数据，需要加载数据")
+                        logger.info("✅ AC自动机和相似度匹配器已初始化，跳过")
+                    
+                    need_initialization = False
+                elif fields_exist and metrics_exist and not dimension_values_exist:
+                    logger.info("⚠️ 字段和指标索引存在但维度值索引不存在，需要创建维度值索引")
+                elif fields_exist and not metrics_exist:
+                    logger.info("⚠️ 字段索引存在但指标/维度值索引不存在，需要创建缺失的索引")
+                elif not fields_exist and (metrics_exist or dimension_values_exist):
+                    logger.info("⚠️ 字段索引不存在但其他索引存在，需要完整重建所有索引")
                 else:
-                    logger.info("索引不存在，需要创建索引和加载数据")
+                    logger.info("索引不存在或无数据，需要创建索引和加载数据")
             except Exception as e:
                 logger.warning(f"检查索引状态时出错: {e}，将尝试初始化")
         
@@ -194,6 +211,18 @@ def get_hybrid_searcher() -> HybridSearcher:
                     
             except Exception as e:
                 logger.error(f"❌ 自动创建索引过程中出错: {e}")
+    
+    # 启动数据同步调度器（如果启用）
+    if _data_sync_scheduler is None:
+        from core.config import config
+        if config.API_SYNC_ENABLED:
+            try:
+                from indexing.scheduler import DataSyncScheduler
+                logger.info("初始化数据同步调度器...")
+                _data_sync_scheduler = DataSyncScheduler(_hybrid_searcher)
+                _data_sync_scheduler.start()
+            except Exception as e:
+                logger.error(f"启动数据同步调度器失败: {e}")
     
     return _hybrid_searcher
 
@@ -246,7 +275,6 @@ def ensure_searcher_ready(searcher: HybridSearcher) -> bool:
 async def search_fields(
     q: str = Query(..., description="搜索查询"),
     table_name: Optional[List[str]] = Query(None, description="限制搜索的表名列表，支持多表选择"),
-    entity_only: bool = Query(False, description="仅搜索实体字段"),
     enabled_only: bool = Query(True, description="仅搜索启用字段"),
     size: int = Query(10, ge=1, le=100, description="返回结果数量"),
     use_tokenization: bool = Query(True, description="是否对查询进行分词处理"),
@@ -290,7 +318,6 @@ async def search_fields(
         request = SearchRequest(
             query=cleaned_query,
             table_name=table_name,
-            entity_only=entity_only,
             enabled_only=enabled_only,
             size=size,
             use_tokenization=use_tokenization,
@@ -375,7 +402,6 @@ async def tokenize_text(
 async def get_search_suggestions(
     q: str = Query(..., description="搜索查询"),
     size: int = Query(5, ge=1, le=20, description="建议数量"),
-    entity_only: bool = Query(False, description="仅建议实体字段"),
     searcher: HybridSearcher = Depends(get_hybrid_searcher)
 ):
     """
@@ -393,7 +419,6 @@ async def get_search_suggestions(
         request = SearchRequest(
             query=q,
             size=size,
-            entity_only=entity_only,
             search_method="hybrid",
             use_tokenization=True
         )
@@ -408,8 +433,7 @@ async def get_search_suggestions(
                 "value": field.column_name,
                 "table": field.table_name,
                 "score": result.score,
-                "search_method": result.search_method,
-                "is_entity": field.is_entity
+                "search_method": result.search_method
             })
         
         return {
@@ -728,48 +752,6 @@ async def test_database_connections():
         logger.error(f"数据库连接测试失败: {e}")
         raise HTTPException(status_code=500, detail=f"数据库连接测试失败: {str(e)}")
 
-
-@router.get("/dimension/validate", 
-            summary="验证维度字段", description="验证元数据中的维度字段在数据库中是否存在")
-async def validate_dimension_fields():
-    """验证维度字段在数据库中是否存在"""
-    try:
-        from indexing.data_loader import MetadataLoader
-        from indexing.dimension_extractor import EnhancedDimensionExtractor
-        
-        # 加载元数据
-        loader = MetadataLoader()
-        fields = loader.load_from_excel()
-        dimension_fields = [f for f in fields if f.field_type == 'dimension']
-        
-        if not dimension_fields:
-            return {
-                "success": True,
-                "message": "没有找到维度字段",
-                "validation_results": {
-                    "total_fields": 0,
-                    "valid_fields": 0,
-                    "invalid_fields": 0,
-                    "details": []
-                }
-            }
-        
-        # 验证维度字段
-        extractor = EnhancedDimensionExtractor()
-        validation_results = extractor.validate_dimension_fields(dimension_fields)
-        extractor.close_connections()
-        
-        return {
-            "success": True,
-            "message": f"验证了 {len(dimension_fields)} 个维度字段",
-            "validation_results": validation_results
-        }
-        
-    except Exception as e:
-        logger.error(f"维度字段验证失败: {e}")
-        raise HTTPException(status_code=500, detail=f"维度字段验证失败: {str(e)}")
-
-
 @router.post("/dimension/extract", 
              summary="手动提取维度值", description="手动触发维度值提取和索引构建")
 async def extract_dimension_values(force_recreate: bool = Query(False, description="是否强制重建维度值索引")):
@@ -785,7 +767,7 @@ async def extract_dimension_values(force_recreate: bool = Query(False, descripti
         
         # 加载元数据
         loader = MetadataLoader()
-        fields = loader.load_from_excel()
+        fields = loader.load()
         
         # 创建维度值索引
         dimension_index_created = searcher.es_engine.create_dimension_values_index(force_recreate)
@@ -834,8 +816,6 @@ async def extract_dimension_values(force_recreate: bool = Query(False, descripti
             description="通过GET方式搜索指标，支持按名称、别名、业务定义等搜索")
 async def search_metrics_get(
     q: str = Query(..., description="搜索查询关键词"),
-    status: Optional[str] = Query(None, description="过滤状态：active/inactive"),
-    metric_type: Optional[str] = Query(None, description="过滤指标类型：count/rate/avg"),
     size: int = Query(10, ge=1, le=100, description="返回结果数量"),
     use_tokenization: bool = Query(True, description="是否使用分词"),
     tokenizer_type: str = Query("ik_max_word", description="分词器类型"),
@@ -849,14 +829,10 @@ async def search_metrics_get(
     - metric_name: 指标名称
     - metric_alias: 指标别名
     - related_entities: 相关实体
-    - business_definition: 业务定义
-    - depends_on_tables: 依赖的表
-    - depends_on_columns: 依赖的字段
-    - metric_sql: SQL语句
     
     示例：
     - /api/search/metrics?q=拜访次数
-    - /api/search/metrics?q=count&metric_type=count&status=active
+    - /api/search/metrics?q=销售额&size=20
     """
     try:
         # 从查询中移除时间部分
@@ -865,8 +841,6 @@ async def search_metrics_get(
         # 构建搜索请求
         request = MetricSearchRequest(
             query=cleaned_query,
-            status=status,
-            metric_type=metric_type,
             size=size,
             use_tokenization=use_tokenization,
             tokenizer_type=tokenizer_type,
@@ -1070,6 +1044,263 @@ async def delete_indices(
     except Exception as e:
         logger.error(f"删除索引操作失败: {e}")
         raise HTTPException(status_code=500, detail=f"删除索引失败: {str(e)}")
+
+
+# ==================== 数据同步API ====================
+
+@router.post("/sync/metadata",
+             summary="手动触发元数据同步",
+             description="从API手动同步元数据到Elasticsearch")
+async def sync_metadata_from_api(
+    table_ids: Optional[List[int]] = Query(None, description="表ID列表，留空则使用配置的表ID"),
+    jwt: Optional[str] = Query(None, description="JWT认证token，留空则使用环境变量配置的JWT"),
+    searcher: HybridSearcher = Depends(get_hybrid_searcher)
+):
+    """
+    手动从API同步元数据到ES
+    
+    ## 参数
+    - table_ids: 可选，指定要同步的表ID列表
+    
+    ## 注意
+    - 如果不提供table_ids，将使用环境变量API_TABLE_IDS配置的表ID
+    - 同步过程可能需要较长时间
+    - 同步完成后会自动更新搜索引擎
+    """
+    try:
+        from indexing.data_loader import MetadataLoader
+        from core.config import config
+        
+        # 确定要同步的表ID
+        sync_table_ids = table_ids if table_ids else []
+        if not sync_table_ids:
+            # 使用配置的表ID
+            table_ids_str = config.API_TABLE_IDS.strip()
+            if table_ids_str:
+                sync_table_ids = [int(tid.strip()) for tid in table_ids_str.split(',') if tid.strip()]
+        
+        if not sync_table_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="未提供表ID且未配置API_TABLE_IDS环境变量"
+            )
+        
+        logger.info(f"手动触发元数据同步，表ID: {sync_table_ids}")
+        
+        # 从API加载元数据
+        loader = MetadataLoader(jwt=jwt)
+        fields = loader.load_from_api(sync_table_ids)
+        
+        if not fields:
+            raise HTTPException(
+                status_code=500,
+                detail="从API加载元数据失败或返回为空"
+            )
+        
+        # 更新ES索引
+        if not searcher.es_engine:
+            raise HTTPException(status_code=500, detail="Elasticsearch引擎不可用")
+        
+        # 确保索引存在
+        if not searcher.es_engine.index_exists():
+            searcher.es_engine.create_index(force=True)
+        
+        # 批量索引
+        index_result = searcher.es_engine.bulk_index_fields(fields)
+        
+        # 重新初始化搜索引擎
+        if searcher.ac_matcher:
+            searcher.ac_matcher.initialize(fields)
+        if searcher.similarity_matcher:
+            searcher.similarity_matcher.initialize(fields)
+        searcher.fields_data = fields
+        
+        return {
+            "success": True,
+            "message": f"成功同步 {index_result.get('success', 0)} 个字段",
+            "stats": {
+                "fields_loaded": len(fields),
+                "fields_indexed": index_result.get('success', 0),
+                "table_ids": sync_table_ids
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"手动同步元数据失败: {e}")
+        raise HTTPException(status_code=500, detail=f"同步失败: {str(e)}")
+
+
+@router.post("/sync/metrics",
+             summary="手动触发指标同步",
+             description="从API手动同步指标到Elasticsearch")
+async def sync_metrics_from_api(
+    jwt: Optional[str] = Query(None, description="JWT认证token，留空则使用环境变量配置的JWT"),
+    ids: Optional[str] = Query(None, description="指标ID列表，逗号分隔（如171,172），留空则使用环境变量或加载所有"),
+    force: bool = Query(True, description="是否强制重建索引（默认True）"),
+    searcher: HybridSearcher = Depends(get_hybrid_searcher)
+):
+    """
+    手动从API同步指标到ES
+    
+    ## 注意
+    - 同步过程可能需要较长时间（需要获取每个指标的详情）
+    - 使用并行方式加速同步
+    - ids参数示例: "171,172" 或 "171,172,173"
+    """
+    try:
+        from indexing.data_loader import MetricLoader
+        
+        # 从API加载指标
+        loader = MetricLoader(jwt=jwt)
+        metrics = loader.load_from_api(max_workers=10, ids=ids)
+        
+        if not metrics:
+            raise HTTPException(
+                status_code=500,
+                detail="从API加载指标失败或返回为空"
+            )
+        
+        # 更新ES索引
+        if not searcher.es_engine:
+            raise HTTPException(status_code=500, detail="Elasticsearch引擎不可用")
+        
+        # 强制重建指标索引（手动同步时删除旧索引，创建新索引）
+        logger.info("手动同步：删除旧指标索引并重建...")
+        searcher.es_engine.create_metric_index(force=force)
+        
+        # 批量索引
+        success = searcher.es_engine.bulk_index_metrics(metrics)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"成功同步 {len(metrics)} 个指标",
+                "stats": {
+                    "metrics_loaded": len(metrics),
+                    "metrics_indexed": len(metrics)
+                }
+            }
+        else:
+            raise HTTPException(status_code=500, detail="指标索引失败")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"手动同步指标失败: {e}")
+        raise HTTPException(status_code=500, detail=f"同步失败: {str(e)}")
+
+
+@router.post("/sync/dimension-values",
+             summary="手动触发维度值同步",
+             description="从数据库提取维度值并同步到Elasticsearch")
+async def sync_dimension_values(
+    jwt: Optional[str] = Query(None, description="JWT认证token，留空则使用环境变量配置的JWT"),
+    force: bool = Query(True, description="是否强制重建索引（默认True）"),
+    searcher: HybridSearcher = Depends(get_hybrid_searcher)
+):
+    """
+    手动从数据库提取维度值并同步到ES
+    
+    ## 注意
+    - 需要先确保元数据已同步（需要知道哪些字段是维度字段）
+    - 会从数据库中提取所有维度字段的唯一值
+    - 默认强制重建索引以确保数据干净
+    """
+    try:
+        from indexing.data_loader import MetadataLoader
+        from indexing.dimension_extractor import EnhancedDimensionExtractor
+        
+        # 加载元数据（获取维度字段信息）
+        loader = MetadataLoader(jwt=jwt)
+        fields = loader.load()
+        
+        if not fields:
+            raise HTTPException(
+                status_code=500,
+                detail="加载元数据失败或返回为空"
+            )
+        
+        # 更新ES索引
+        if not searcher.es_engine:
+            raise HTTPException(status_code=500, detail="Elasticsearch引擎不可用")
+        
+        # 强制重建维度值索引
+        logger.info("手动同步：删除旧维度值索引并重建...")
+        dimension_index_created = searcher.es_engine.create_dimension_values_index(force)
+        
+        if not dimension_index_created:
+            raise HTTPException(status_code=500, detail="维度值索引创建失败")
+        
+        # 提取维度值
+        extractor = EnhancedDimensionExtractor()
+        dimension_values = extractor.extract_all_dimension_values(fields)
+        extractor.close_connections()
+        
+        if not dimension_values:
+            return {
+                "success": True,
+                "message": "没有找到需要提取的维度值",
+                "stats": {
+                    "dimension_values_extracted": 0,
+                    "dimension_values_indexed": 0
+                }
+            }
+        
+        # 批量索引维度值
+        index_result = searcher.es_engine.bulk_index_dimension_values(dimension_values)
+        
+        return {
+            "success": True,
+            "message": f"成功提取并索引 {index_result.get('success', 0)} 个维度值",
+            "stats": {
+                "dimension_values_extracted": len(dimension_values),
+                "dimension_values_indexed": index_result.get('success', 0),
+                "dimension_values_failed": index_result.get('failed', 0)
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"手动同步维度值失败: {e}")
+        raise HTTPException(status_code=500, detail=f"同步失败: {str(e)}")
+
+
+@router.get("/sync/status",
+            summary="获取同步状态",
+            description="获取数据同步调度器的状态和最后一次同步的结果")
+async def get_sync_status():
+    """
+    获取同步状态
+    
+    ## 返回信息
+    - enabled: 是否启用同步
+    - interval_hours: 同步间隔（小时）
+    - table_ids: 配置的表ID列表
+    - is_syncing: 是否正在同步
+    - last_sync_time: 最后一次同步时间
+    - last_sync_status: 最后一次同步的详细状态
+    - scheduler_running: 调度器是否运行中
+    """
+    try:
+        global _data_sync_scheduler
+        
+        if _data_sync_scheduler is None:
+            from core.config import config
+            return {
+                "enabled": config.API_SYNC_ENABLED,
+                "message": "数据同步调度器未初始化",
+                "scheduler_running": False
+            }
+        
+        status = _data_sync_scheduler.get_status()
+        return status
+        
+    except Exception as e:
+        logger.error(f"获取同步状态失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取状态失败: {str(e)}")
 
 
 # ==================== 综合分析API ====================

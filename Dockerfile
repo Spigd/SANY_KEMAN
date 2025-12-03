@@ -51,6 +51,17 @@ ENV API_HOST=0.0.0.0 \
 ENV METADATA_EXCEL_PATH=客满-元数据表.xlsx \
     METRIC_EXCEL_PATH=metric_latest.xlsx
 
+# 元数据和指标API配置
+ENV METADATA_API_BASE_URL=http://localhost:8080 \
+    METADATA_API_TIMEOUT=30 \
+    METADATA_API_JWT=""
+
+# API数据同步配置
+ENV API_SYNC_ENABLED=false \
+    API_SYNC_INTERVAL=2 \
+    API_TABLE_IDS="" \
+    API_METRIC_IDS=""
+
 # 混合搜索权重配置
 ENV ES_WEIGHT=1.0 \
     AC_WEIGHT=0.9 \

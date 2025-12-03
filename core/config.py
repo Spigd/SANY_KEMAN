@@ -34,7 +34,7 @@ class Config:
         # Elasticsearch配置
         self.ES_HOST = os.getenv('ES_HOST', '10.66.0.160')
         self.ES_PORT = int(os.getenv('ES_PORT', '9200'))
-        self.ES_INDEX_PREFIX = os.getenv('ES_INDEX_PREFIX', 'keman_metadata')
+        self.ES_INDEX_PREFIX = os.getenv('ES_INDEX_PREFIX', 'kman')
         
         # API配置
         self.API_HOST = os.getenv('API_HOST', '0.0.0.0')
@@ -43,6 +43,17 @@ class Config:
         # 数据文件配置
         self.METADATA_EXCEL_PATH = os.getenv('METADATA_EXCEL_PATH', '客满-元数据表.xlsx')
         self.METRIC_EXCEL_PATH = os.getenv('METRIC_EXCEL_PATH', 'metric_latest.xlsx')
+        
+        # 元数据和指标API配置
+        self.METADATA_API_BASE_URL = os.getenv('METADATA_API_BASE_URL', 'https://metric-asset-api-internal.rootcloudapp.com')
+        self.METADATA_API_TIMEOUT = int(os.getenv('METADATA_API_TIMEOUT', '30'))
+        self.METADATA_API_JWT = os.getenv('METADATA_API_JWT', 'eyJhbGciOiJIUzUxMiJ9.eyJvcmdhbml6YXRpb25JZCI6OTAwMCwibmFtZSI6ImFkbWluIiwiaWQiOi0xLCJpc0FkbWluIjp0cnVlLCJ1c2VybmFtZSI6ImFkbWluIiwic3ViIjoiYWRtaW4iLCJpYXQiOjE3NjQ2Njc3MTQsImV4cCI6MTc2NDc1NDExNH0.n_AYqqlh4JxrA2QD1oxqN9Zo1kitiv_wUKjdYH76kP-d34JxasKB4DXmUkNxa6pHxXGzRyko9JAAuMUWt4Ju_Q')
+        
+        # API数据同步配置
+        self.API_SYNC_ENABLED = os.getenv('API_SYNC_ENABLED', 'true').lower() == 'true'
+        self.API_SYNC_INTERVAL = float(os.getenv('API_SYNC_INTERVAL', '2'))  # 小时
+        self.API_TABLE_IDS = os.getenv('API_TABLE_IDS', '268,269,270')  # 逗号分隔的表ID列表
+        self.API_METRIC_IDS = os.getenv('API_METRIC_IDS', '171,172,357')  # 逗号分隔的指标ID列表，如 "171,172"
         
         # 混合搜索配置
         self.HYBRID_SEARCH_WEIGHTS = {

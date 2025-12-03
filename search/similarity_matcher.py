@@ -29,7 +29,7 @@ class SimilarityMatcher:
             fields: 元数据字段列表
         """
         try:
-            self.fields = [field for field in fields if field.is_enabled]
+            self.fields = [field for field in fields if field.is_effect]
             self.search_corpus = []
             
             # 构建搜索语料库
@@ -44,17 +44,6 @@ class SimilarityMatcher:
                 
                 if field.description:
                     searchable_texts.append(field.description)
-                
-                if field.column_name:
-                    searchable_texts.append(field.column_name)
-                
-                # 添加枚举值
-                for value in field.enum_values.values():
-                    if value:
-                        searchable_texts.append(value)
-                
-                if field.sample_data:
-                    searchable_texts.append(field.sample_data)
                 
                 # 合并所有文本作为该字段的搜索文本
                 combined_text = ' '.join(searchable_texts).lower()
@@ -74,7 +63,7 @@ class SimilarityMatcher:
             return False
     
     def search_fields(self, query: str, table_name: Optional[str] = None,
-                     entity_only: bool = False, enabled_only: bool = True,
+                     enabled_only: bool = True,
                      size: int = 10, use_tokenization: bool = True) -> SearchResponse:
         """
         使用相似度匹配搜索字段
@@ -82,7 +71,6 @@ class SimilarityMatcher:
         Args:
             query: 搜索查询
             table_name: 限制搜索的表名
-            entity_only: 仅搜索实体字段
             enabled_only: 仅搜索启用字段
             size: 返回结果数量
             use_tokenization: 是否使用分词（影响相似度计算）
@@ -113,10 +101,7 @@ class SimilarityMatcher:
                 if table_name and field.table_name != table_name:
                     continue
                 
-                if entity_only and not field.is_entity:
-                    continue
-                
-                if enabled_only and not field.is_enabled:
+                if enabled_only and not field.is_effect:
                     continue
                 
                 # 计算相似度分数
@@ -290,7 +275,6 @@ class SimilarityMatcher:
         """
         return self.search_fields(
             query=query,
-            entity_only=True,
             size=top_k
         )
     
@@ -310,7 +294,6 @@ class SimilarityMatcher:
             # 使用相似度匹配查找实体
             response = self.search_fields(
                 query=text,
-                entity_only=True,
                 size=10
             )
             

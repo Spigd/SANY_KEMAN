@@ -142,7 +142,6 @@ class HybridSearcher:
                         self.es_engine.search_fields,
                         query=request.query,
                         table_name=request.table_name,
-                        entity_only=request.entity_only,
                         enabled_only=request.enabled_only,
                         size=request.size * 2,  # 获取更多结果用于合并
                         use_tokenization=request.use_tokenization,
@@ -156,7 +155,6 @@ class HybridSearcher:
                         self.ac_matcher.search_fields,
                         query=request.query,
                         table_name=request.table_name,
-                        entity_only=request.entity_only,
                         enabled_only=request.enabled_only,
                         size=request.size * 2,
                         use_tokenization=request.use_tokenization
@@ -168,7 +166,6 @@ class HybridSearcher:
                         self.similarity_matcher.search_fields,
                         query=request.query,
                         table_name=request.table_name,
-                        entity_only=request.entity_only,
                         enabled_only=request.enabled_only,
                         size=request.size * 2,
                         use_tokenization=request.use_tokenization
@@ -220,7 +217,6 @@ class HybridSearcher:
                 return self.es_engine.search_fields(
                     query=request.query,
                     table_name=request.table_name,
-                    entity_only=request.entity_only,
                     enabled_only=request.enabled_only,
                     size=request.size,
                     use_tokenization=request.use_tokenization,
@@ -231,7 +227,6 @@ class HybridSearcher:
                 return engine.search_fields(
                     query=request.query,
                     table_name=request.table_name,
-                    entity_only=request.entity_only,
                     enabled_only=request.enabled_only,
                     size=request.size,
                     use_tokenization=request.use_tokenization
@@ -449,14 +444,14 @@ class HybridSearcher:
             # 导入数据加载器
             from indexing.data_loader import MetadataLoader
             
-            # 加载Excel数据
+            # 加载数据
             loader = MetadataLoader(excel_path)
-            fields = loader.load_from_excel()
+            fields = loader.load()
             
             if not fields:
                 return {
                     'success': False,
-                    'message': '未能从Excel文件加载数据',
+                    'message': '未能加载数据',
                     'took': int((datetime.now() - start_time).total_seconds() * 1000)
                 }
             
@@ -597,7 +592,7 @@ class HybridSearcher:
             # 批量索引指标数据
             if metrics:
                 logger.info(f"开始索引 {len(metrics)} 个指标...")
-                index_success = self.es_engine.index_metrics(metrics)
+                index_success = self.es_engine.bulk_index_metrics(metrics)
                 
                 if index_success:
                     logger.info(f"✅ 成功索引 {len(metrics)} 个指标")
@@ -637,8 +632,6 @@ class HybridSearcher:
             # 调用ES引擎搜索指标
             response = self.es_engine.search_metrics(
                 query=request.query,
-                status=request.status,
-                metric_type=request.metric_type,
                 size=request.size,
                 use_tokenization=request.use_tokenization,
                 tokenizer_type=request.tokenizer_type,
@@ -677,7 +670,7 @@ class HybridSearcher:
             
             loader = MetricLoader(excel_path=excel_path)
             logger.info("开始加载指标数据...")
-            metrics = loader.load_from_excel()
+            metrics = loader.load()
             
             if not metrics:
                 return {

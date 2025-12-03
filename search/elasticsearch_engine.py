@@ -173,21 +173,13 @@ class ElasticsearchEngine:
                         },
                         "data_type": {"type": "keyword"},
                         "field_type": {"type": "keyword"},
-                        "is_entity": {"type": "boolean"},
-                        "is_enabled": {"type": "boolean"},
-                        "is_enum": {"type": "boolean"},
-                        "enum_values": {
-                            "type": "text",
-                            "analyzer": analyzer,
-                            "search_analyzer": search_analyzer
-                        },
+                        "is_effect": {"type": "boolean"},
+                        "data_format": {"type": "keyword"},
                         "sample_data": {
                             "type": "text",
                             "analyzer": analyzer,
                             "search_analyzer": search_analyzer
-                        },
-                        "created_at": {"type": "date"},
-                        "updated_at": {"type": "date"}
+                        }
                     }
                 },
                 "settings": {
@@ -336,42 +328,9 @@ class ElasticsearchEngine:
         success_count = 0
         failed_count = 0
         
-        # 如果不强制重建，先检查索引是否已有数据
-        if not force:
-            try:
-                # 检查索引是否存在且有数据
-                if self.index_exists():
-                    count_response = self.es.count(index=self.fields_index_name)
-                    existing_count = count_response.get('count', 0)
-                    
-                    if existing_count > 0:
-                        logger.info(f"索引 {self.fields_index_name} 已存在 {existing_count} 条数据，跳过重复索引")
-                        return {
-                            "success": existing_count,
-                            "failed": 0,
-                            "total": len(fields),
-                            "skipped": True,
-                            "message": f"索引已存在 {existing_count} 条数据，跳过重复索引"
-                        }
-            except Exception as e:
-                logger.warning(f"检查索引数据时出错，继续执行索引操作: {e}")
-        
         actions = []
         for field in fields:
             doc = field.model_dump()
-            doc['created_at'] = datetime.now()
-            doc['updated_at'] = datetime.now()
-            
-            # 处理enum_values字典转文本
-            if 'enum_values' in doc and isinstance(doc['enum_values'], dict):
-                if doc['enum_values']:
-                    enum_text_parts = []
-                    for key, value in doc['enum_values'].items():
-                        enum_text_parts.append(str(key))
-                        enum_text_parts.append(str(value))
-                    doc['enum_values'] = ' '.join(enum_text_parts)
-                else:
-                    doc['enum_values'] = ''
             
             doc_id = f"{field.table_name}_{field.column_name}"
             
@@ -421,26 +380,6 @@ class ElasticsearchEngine:
         success_count = 0
         failed_count = 0
         
-        # 如果不强制重建，先检查维度值索引是否已有数据
-        if not force:
-            try:
-                # 检查维度值索引是否存在且有数据
-                if self.dimension_values_index_exists():
-                    count_response = self.es.count(index=self.dimension_values_index_name)
-                    existing_count = count_response.get('count', 0)
-                    
-                    if existing_count > 0:
-                        logger.info(f"维度值索引 {self.dimension_values_index_name} 已存在 {existing_count} 条数据，跳过重复索引")
-                        return {
-                            "success": existing_count,
-                            "failed": 0,
-                            "total": len(dimension_values),
-                            "skipped": True,
-                            "message": f"维度值索引已存在 {existing_count} 条数据，跳过重复索引"
-                        }
-            except Exception as e:
-                logger.warning(f"检查维度值索引数据时出错，继续执行索引操作: {e}")
-        
         actions = []
         for dim_value in dimension_values:
             doc = dim_value.model_dump()
@@ -480,7 +419,7 @@ class ElasticsearchEngine:
         }
     
     def search_fields(self, query: str, table_name: Optional[Union[str, List[str]]] = None,
-                     entity_only: bool = False, enabled_only: bool = True,
+                     enabled_only: bool = True,
                      size: int = 10, use_tokenization: bool = True,
                      tokenizer_type: str = "ik_max_word",
                      highlight: bool = True) -> SearchResponse:
@@ -490,7 +429,6 @@ class ElasticsearchEngine:
         Args:
             query: 搜索查询
             table_name: 限制搜索的表名
-            entity_only: 仅搜索实体字段
             enabled_only: 仅搜索启用字段
             size: 返回结果数量
             use_tokenization: 是否使用分词
@@ -508,7 +446,6 @@ class ElasticsearchEngine:
             search_body = self._build_search_query(
                 query=query,
                 table_name=table_name,
-                entity_only=entity_only,
                 enabled_only=enabled_only,
                 size=size,
                 use_tokenization=use_tokenization,
@@ -526,23 +463,6 @@ class ElasticsearchEngine:
             results = []
             for hit in response['hits']['hits']:
                 field_data = hit['_source']
-                
-                # 处理enum_values字符串转字典
-                if 'enum_values' in field_data and isinstance(field_data['enum_values'], str):
-                    if field_data['enum_values'].strip():
-                        enum_str = field_data['enum_values'].strip()
-                        enum_parts = enum_str.split()
-                        enum_dict = {}
-                        
-                        for i in range(0, len(enum_parts), 2):
-                            if i + 1 < len(enum_parts):
-                                key = enum_parts[i]
-                                value = enum_parts[i + 1]
-                                enum_dict[key] = value
-                        
-                        field_data['enum_values'] = enum_dict
-                    else:
-                        field_data['enum_values'] = {}
                 
                 field = MetadataField(**field_data)
                 
@@ -591,7 +511,7 @@ class ElasticsearchEngine:
             )
     
     def _build_search_query(self, query: str, table_name: Optional[Union[str, List[str]]] = None,
-                           entity_only: bool = False, enabled_only: bool = True,
+                           enabled_only: bool = True,
                            size: int = 10, use_tokenization: bool = True,
                            tokenizer_type: str = "ik_max_word",
                            highlight: bool = True) -> Dict[str, Any]:
@@ -642,11 +562,8 @@ class ElasticsearchEngine:
                 # 单表选择：保持原有逻辑
                 filter_queries.append({"term": {"table_name": table_name}})
         
-        if entity_only:
-            filter_queries.append({"term": {"is_entity": True}})
-        
         if enabled_only:
-            filter_queries.append({"term": {"is_enabled": True}})
+            filter_queries.append({"term": {"is_effect": True}})
         
         # 构建完整查询
         search_body = {
@@ -688,15 +605,9 @@ class ElasticsearchEngine:
             total_response = self.es.count(index=self.fields_index_name)
             total_fields = total_response['count']
             
-            entity_response = self.es.count(
-                index=self.fields_index_name,
-                body={"query": {"term": {"is_entity": True}}}
-            )
-            entity_fields = entity_response['count']
-            
             enabled_response = self.es.count(
                 index=self.fields_index_name,
-                body={"query": {"term": {"is_enabled": True}}}
+                body={"query": {"term": {"is_effect": True}}}
             )
             enabled_fields = enabled_response['count']
             
@@ -717,7 +628,6 @@ class ElasticsearchEngine:
             
             return IndexStats(
                 total_fields=total_fields,
-                entity_fields=entity_fields,
                 enabled_fields=enabled_fields,
                 tables_count=tables_count,
                 last_updated=datetime.now()
@@ -727,7 +637,6 @@ class ElasticsearchEngine:
             logger.error(f"获取统计信息失败: {e}")
             return IndexStats(
                 total_fields=0,
-                entity_fields=0,
                 enabled_fields=0,
                 tables_count=0,
                 last_updated=None
@@ -789,8 +698,8 @@ class ElasticsearchEngine:
                 field = MetadataField(
                     table_name=dimension_value_data['table_name'],
                     column_name=dimension_value_data['column_name'],
-                    chinese_name=dimension_value_data['chinese_name'],
-                    field_type='dimension',
+                    chinese_name=dimension_value_data.get('chinese_name', dimension_value_data.get('display_name', '')),
+                    field_type='DIMENSION',
                     data_type=dimension_value_data.get('data_type', 'text'),
                     description=f"维度值: {dimension_value_data['value']}"
                 )
@@ -847,18 +756,15 @@ class ElasticsearchEngine:
         """构建维度值搜索查询"""
         
         # 根据分词设置构建查询
-        # 维度值搜索：只匹配value字段
         if use_tokenization:
             # 使用分词的查询
             must_queries = [
                 {
-                    "multi_match": {
-                        "query": query,
-                        "fields": [
-                            "value^4"
-                        ],
-                        "type": "best_fields",
-                        "fuzziness": "AUTO"
+                    "match": {
+                        "value": {
+                            "query": query,
+                            "fuzziness": "AUTO"
+                        }
                     }
                 }
             ]
@@ -996,23 +902,6 @@ class ElasticsearchEngine:
                             "analyzer": analyzer,
                             "search_analyzer": search_analyzer
                         },
-                        "metric_type": {
-                            "type": "keyword"
-                        },
-                        "status": {
-                            "type": "keyword"
-                        },
-                        "owner": {
-                            "type": "keyword"
-                        },
-                        "created_at": {
-                            "type": "date",
-                            "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis"
-                        },
-                        "updated_at": {
-                            "type": "date",
-                            "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis"
-                        },
                         "search_text": {
                             "type": "text",
                             "analyzer": analyzer,
@@ -1043,12 +932,13 @@ class ElasticsearchEngine:
             logger.error(f"创建指标索引失败: {e}")
             return False
     
-    def index_metrics(self, metrics: List[Metric]) -> bool:
+    def bulk_index_metrics(self, metrics: List[Metric], force: bool = False) -> bool:
         """
         批量索引指标数据
         
         Args:
             metrics: 指标列表
+            force: 是否强制更新（暂未使用，为了接口一致性保留）
         """
         try:
             if not metrics:
@@ -1074,11 +964,6 @@ class ElasticsearchEngine:
                         "depends_on_tables": " ".join(metric.depends_on_tables) if metric.depends_on_tables else "",
                         "depends_on_columns": " ".join(metric.depends_on_columns) if metric.depends_on_columns else "",
                         "business_definition": metric.business_definition,
-                        "metric_type": metric.metric_type,
-                        "status": metric.status,
-                        "owner": metric.owner,
-                        "created_at": metric.created_at.isoformat() if metric.created_at else None,
-                        "updated_at": metric.updated_at.isoformat() if metric.updated_at else None,
                         "search_text": search_text
                     }
                 }
@@ -1097,16 +982,13 @@ class ElasticsearchEngine:
             logger.error(f"批量索引指标失败: {e}")
             return False
     
-    def search_metrics(self, query: str, status: Optional[str] = None, metric_type: Optional[str] = None,
-                      size: int = 10, use_tokenization: bool = True, tokenizer_type: str = "ik_max_word",
-                      highlight: bool = True) -> MetricSearchResponse:
+    def search_metrics(self, query: str, size: int = 10, use_tokenization: bool = True, 
+                      tokenizer_type: str = "ik_max_word", highlight: bool = True) -> MetricSearchResponse:
         """
         搜索指标
         
         Args:
             query: 搜索查询
-            status: 过滤状态
-            metric_type: 过滤指标类型
             size: 返回结果数量
             use_tokenization: 是否使用分词
             tokenizer_type: 分词器类型
@@ -1130,8 +1012,6 @@ class ElasticsearchEngine:
             # 构建搜索查询
             search_body = self._build_metric_search_query(
                 query=query,
-                status=status,
-                metric_type=metric_type,
                 size=size,
                 use_tokenization=use_tokenization,
                 tokenizer_type=tokenizer_type,
@@ -1155,12 +1035,7 @@ class ElasticsearchEngine:
                     metric_sql=source.get('metric_sql', ''),
                     depends_on_tables=source.get('depends_on_tables', '').split() if source.get('depends_on_tables') else [],
                     depends_on_columns=source.get('depends_on_columns', '').split() if source.get('depends_on_columns') else [],
-                    business_definition=source.get('business_definition', ''),
-                    metric_type=source.get('metric_type', ''),
-                    status=source.get('status', 'active'),
-                    owner=source.get('owner'),
-                    created_at=datetime.fromisoformat(source['created_at']) if source.get('created_at') else None,
-                    updated_at=datetime.fromisoformat(source['updated_at']) if source.get('updated_at') else None
+                    business_definition=source.get('business_definition', '')
                 )
                 
                 # 处理高亮
@@ -1213,14 +1088,12 @@ class ElasticsearchEngine:
                 tokenizer_type=tokenizer_type if use_tokenization else None
             )
     
-    def _build_metric_search_query(self, query: str, status: Optional[str] = None,
-                                  metric_type: Optional[str] = None, size: int = 10,
+    def _build_metric_search_query(self, query: str, size: int = 10,
                                   use_tokenization: bool = True, tokenizer_type: str = "ik_max_word",
                                   highlight: bool = True) -> Dict[str, Any]:
         """构建指标搜索查询"""
         
         # 根据分词设置构建查询
-        # 指标搜索：只匹配metric_name、metric_alias和related_entities
         if use_tokenization:
             # 使用分词的查询
             must_queries = [
@@ -1256,14 +1129,6 @@ class ElasticsearchEngine:
         
         # 过滤条件
         filter_queries = []
-        
-        # 状态过滤
-        if status:
-            filter_queries.append({"term": {"status": status.lower()}})
-        
-        # 指标类型过滤
-        if metric_type:
-            filter_queries.append({"term": {"metric_type": metric_type.lower()}})
         
         # 构建查询体
         search_body = {
