@@ -320,12 +320,27 @@ class MetadataLoader:
                 logger.warning(f"字段缺少必需信息: {data}")
                 return None
             
-            # 处理别名 - synonyms是逗号分隔的字符串，处理None值
+            # 处理别名 - synonyms可能是JSON字符串或逗号分隔的字符串
             alias = []
             synonyms_str = (data.get('synonyms') or '').strip()
             if synonyms_str:
-                # 按逗号分割
-                alias = [s.strip() for s in synonyms_str.split(',') if s.strip()]
+                try:
+                    # 首先尝试作为 JSON 数组解析
+                    if synonyms_str.startswith('[') and synonyms_str.endswith(']'):
+                        parsed = json.loads(synonyms_str)
+                        if isinstance(parsed, list):
+                            # 确保所有元素都是字符串
+                            alias = [str(item).strip() for item in parsed if item]
+                        else:
+                            # 如果解析结果不是列表，作为单个别名
+                            alias = [str(parsed).strip()]
+                    else:
+                        # 不是 JSON 格式，按逗号分割
+                        alias = [s.strip() for s in synonyms_str.split(',') if s.strip()]
+                except json.JSONDecodeError:
+                    # JSON 解析失败，回退到逗号分割
+                    logger.debug(f"synonyms 不是有效的 JSON，使用逗号分割: {synonyms_str}")
+                    alias = [s.strip() for s in synonyms_str.split(',') if s.strip()]
             
             # 处理描述 - 处理None值
             description = (data.get('fieldComment') or '').strip()
