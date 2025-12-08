@@ -519,18 +519,38 @@ class ElasticsearchEngine:
         
         # 根据分词设置构建查询
         if use_tokenization:
-            # 使用分词的查询
+            # 使用分词的分层查询：精确短语 > 完整词匹配 > 模糊匹配
             must_queries = [
                 {
-                    "multi_match": {
-                        "query": query,
-                        "fields": [
-                            "chinese_name^4",
-                            "alias^3",
-                            "description^2"
-                        ],
-                        "type": "best_fields",
-                        "fuzziness": "AUTO"
+                    "bool": {
+                        "should": [
+                            # 精确短语匹配 - 最高权重
+                            {
+                                "multi_match": {
+                                    "query": query,
+                                    "fields": ["chinese_name^10", "alias^8", "description^4"],
+                                    "type": "phrase"
+                                }
+                            },
+                            # 完整词匹配 - 中等权重
+                            {
+                                "multi_match": {
+                                    "query": query,
+                                    "fields": ["chinese_name^5", "alias^4", "description^2"],
+                                    "type": "best_fields",
+                                    "operator": "and"
+                                }
+                            },
+                            # 模糊匹配 - 最低权重
+                            {
+                                "multi_match": {
+                                    "query": query,
+                                    "fields": ["chinese_name^2", "alias^1.5", "description^1"],
+                                    "type": "best_fields",
+                                    "fuzziness": "AUTO"
+                                }
+                            }
+                        ]
                     }
                 }
             ]
@@ -581,9 +601,22 @@ class ElasticsearchEngine:
         if highlight:
             search_body["highlight"] = {
                 "fields": {
-                    "chinese_name": {},
-                    "alias": {},
-                    "description": {}
+                    "chinese_name": {
+                        "pre_tags": ["<em>"],
+                        "post_tags": ["</em>"],
+                        "number_of_fragments": 0  # 返回完整字段
+                    },
+                    "alias": {
+                        "pre_tags": ["<em>"],
+                        "post_tags": ["</em>"],
+                        "number_of_fragments": 0  # 对于数组，只返回匹配的元素
+                    },
+                    "description": {
+                        "pre_tags": ["<em>"],
+                        "post_tags": ["</em>"],
+                        "fragment_size": 150,  # 描述可能较长，返回片段
+                        "number_of_fragments": 3
+                    }
                 }
             }
         
@@ -958,11 +991,11 @@ class ElasticsearchEngine:
                     "_source": {
                         "metric_id": metric.metric_id,
                         "metric_name": metric.metric_name,
-                        "metric_alias": " ".join(metric.metric_alias) if metric.metric_alias else "",
-                        "related_entities": " ".join(metric.related_entities) if metric.related_entities else "",
+                        "metric_alias": metric.metric_alias if metric.metric_alias else [],
+                        "related_entities": metric.related_entities if metric.related_entities else [],
                         "metric_sql": metric.metric_sql,
-                        "depends_on_tables": " ".join(metric.depends_on_tables) if metric.depends_on_tables else "",
-                        "depends_on_columns": " ".join(metric.depends_on_columns) if metric.depends_on_columns else "",
+                        "depends_on_tables": metric.depends_on_tables if metric.depends_on_tables else [],
+                        "depends_on_columns": metric.depends_on_columns if metric.depends_on_columns else [],
                         "business_definition": metric.business_definition,
                         "search_text": search_text
                     }
@@ -1026,15 +1059,39 @@ class ElasticsearchEngine:
             for hit in response['hits']['hits']:
                 source = hit['_source']
                 
-                # 构建Metric对象
+                # 构建Metric对象（添加类型检查以向后兼容旧索引）
+                metric_alias_value = source.get('metric_alias', [])
+                if isinstance(metric_alias_value, list):
+                    metric_alias = metric_alias_value
+                else:
+                    metric_alias = metric_alias_value.split() if metric_alias_value else []
+                
+                related_entities_value = source.get('related_entities', [])
+                if isinstance(related_entities_value, list):
+                    related_entities = related_entities_value
+                else:
+                    related_entities = related_entities_value.split() if related_entities_value else []
+                
+                depends_on_tables_value = source.get('depends_on_tables', [])
+                if isinstance(depends_on_tables_value, list):
+                    depends_on_tables = depends_on_tables_value
+                else:
+                    depends_on_tables = depends_on_tables_value.split() if depends_on_tables_value else []
+                
+                depends_on_columns_value = source.get('depends_on_columns', [])
+                if isinstance(depends_on_columns_value, list):
+                    depends_on_columns = depends_on_columns_value
+                else:
+                    depends_on_columns = depends_on_columns_value.split() if depends_on_columns_value else []
+                
                 metric = Metric(
                     metric_id=int(source['metric_id']),
                     metric_name=source['metric_name'],
-                    metric_alias=source.get('metric_alias', '').split() if source.get('metric_alias') else [],
-                    related_entities=source.get('related_entities', '').split() if source.get('related_entities') else [],
+                    metric_alias=metric_alias,
+                    related_entities=related_entities,
                     metric_sql=source.get('metric_sql', ''),
-                    depends_on_tables=source.get('depends_on_tables', '').split() if source.get('depends_on_tables') else [],
-                    depends_on_columns=source.get('depends_on_columns', '').split() if source.get('depends_on_columns') else [],
+                    depends_on_tables=depends_on_tables,
+                    depends_on_columns=depends_on_columns,
                     business_definition=source.get('business_definition', '')
                 )
                 
@@ -1095,18 +1152,38 @@ class ElasticsearchEngine:
         
         # 根据分词设置构建查询
         if use_tokenization:
-            # 使用分词的查询
+            # 使用分词的分层查询：精确短语 > 完整词匹配 > 模糊匹配
             must_queries = [
                 {
-                    "multi_match": {
-                        "query": query,
-                        "fields": [
-                            "metric_name^5",
-                            "metric_alias^4",
-                            "related_entities^3"
-                        ],
-                        "type": "best_fields",
-                        "fuzziness": "AUTO"
+                    "bool": {
+                        "should": [
+                            # 第一层：精确短语匹配 - 最高权重
+                            {
+                                "multi_match": {
+                                    "query": query,
+                                    "fields": ["metric_name^10", "metric_alias^8", "related_entities^5"],
+                                    "type": "phrase"
+                                }
+                            },
+                            # 第二层：完整词匹配（所有词都要出现）- 中等权重
+                            {
+                                "multi_match": {
+                                    "query": query,
+                                    "fields": ["metric_name^5", "metric_alias^4", "related_entities^3"],
+                                    "type": "best_fields",
+                                    "operator": "and"
+                                }
+                            },
+                            # 第三层：模糊匹配 - 最低权重
+                            {
+                                "multi_match": {
+                                    "query": query,
+                                    "fields": ["metric_name^2", "metric_alias^1.5", "related_entities^1"],
+                                    "type": "best_fields",
+                                    "fuzziness": "AUTO"
+                                }
+                            }
+                        ]
                     }
                 }
             ]
@@ -1148,9 +1225,21 @@ class ElasticsearchEngine:
         if highlight:
             search_body["highlight"] = {
                 "fields": {
-                    "metric_name": {"pre_tags": ["<em>"], "post_tags": ["</em>"]},
-                    "metric_alias": {"pre_tags": ["<em>"], "post_tags": ["</em>"]},
-                    "related_entities": {"pre_tags": ["<em>"], "post_tags": ["</em>"]}
+                    "metric_name": {
+                        "pre_tags": ["<em>"],
+                        "post_tags": ["</em>"],
+                        "number_of_fragments": 0  # 返回完整字段
+                    },
+                    "metric_alias": {
+                        "pre_tags": ["<em>"],
+                        "post_tags": ["</em>"],
+                        "number_of_fragments": 0  # 对于数组，只返回匹配的元素
+                    },
+                    "related_entities": {
+                        "pre_tags": ["<em>"],
+                        "post_tags": ["</em>"],
+                        "number_of_fragments": 0
+                    }
                 }
             }
         
