@@ -528,7 +528,7 @@ class ElasticsearchEngine:
                             {
                                 "multi_match": {
                                     "query": query,
-                                    "fields": ["chinese_name^10", "alias^8", "description^4"],
+                                    "fields": ["chinese_name^10", "alias^8"],
                                     "type": "phrase"
                                 }
                             },
@@ -536,7 +536,7 @@ class ElasticsearchEngine:
                             {
                                 "multi_match": {
                                     "query": query,
-                                    "fields": ["chinese_name^5", "alias^4", "description^2"],
+                                    "fields": ["chinese_name^5", "alias^4"],
                                     "type": "best_fields",
                                     "operator": "and"
                                 }
@@ -545,7 +545,7 @@ class ElasticsearchEngine:
                             {
                                 "multi_match": {
                                     "query": query,
-                                    "fields": ["chinese_name^2", "alias^1.5", "description^1"],
+                                    "fields": ["chinese_name^2", "alias^1.5"],
                                     "type": "best_fields",
                                     "fuzziness": "AUTO"
                                 }
@@ -563,8 +563,7 @@ class ElasticsearchEngine:
                             {"match_phrase": {"chinese_name": query}},
                             {"match_phrase": {"alias": query}},
                             {"term": {"chinese_name.keyword": query}},
-                            {"terms": {"alias.exact": [query]}},
-                            {"match_phrase": {"description": query}}
+                            {"terms": {"alias.exact": [query]}}
                         ],
                         "minimum_should_match": 1
                     }
@@ -610,12 +609,6 @@ class ElasticsearchEngine:
                         "pre_tags": ["<em>"],
                         "post_tags": ["</em>"],
                         "number_of_fragments": 0  # 对于数组，只返回匹配的元素
-                    },
-                    "description": {
-                        "pre_tags": ["<em>"],
-                        "post_tags": ["</em>"],
-                        "fragment_size": 150,  # 描述可能较长，返回片段
-                        "number_of_fragments": 3
                     }
                 }
             }
