@@ -532,13 +532,13 @@ class ElasticsearchEngine:
                                     "type": "phrase"
                                 }
                             },
-                            # 完整词匹配 - 中等权重
+                            # 完整词匹配 - 中等权重（字段所有词都在用户问题中）
                             {
                                 "multi_match": {
                                     "query": query,
                                     "fields": ["chinese_name^5", "alias^4"],
-                                    "type": "best_fields",
-                                    "operator": "and"
+                                    "type": "best_fields"
+                                    # 去掉 operator: "and"，让ES自然计算：词数越多且全匹配，得分越高
                                 }
                             },
                             # 模糊匹配 - 最低权重
@@ -783,14 +783,41 @@ class ElasticsearchEngine:
         
         # 根据分词设置构建查询
         if use_tokenization:
-            # 使用分词的查询
+            # 使用分词的分层查询：精确短语 > 完整词匹配 > 模糊匹配
             must_queries = [
                 {
-                    "match": {
-                        "value": {
-                            "query": query,
-                            "fuzziness": "AUTO"
-                        }
+                    "bool": {
+                        "should": [
+                            # 第一层：精确短语匹配 - 最高权重
+                            {
+                                "match_phrase": {
+                                    "value": {
+                                        "query": query,
+                                        "boost": 10
+                                    }
+                                }
+                            },
+                            # 第二层：完整词匹配（维度值所有词都在用户问题中）- 中等权重
+                            {
+                                "match": {
+                                    "value": {
+                                        "query": query,
+                                        "boost": 5
+                                        # 词数越多且全匹配，得分越高
+                                    }
+                                }
+                            },
+                            # 第三层：模糊匹配 - 最低权重
+                            {
+                                "match": {
+                                    "value": {
+                                        "query": query,
+                                        "fuzziness": "AUTO",
+                                        "boost": 2
+                                    }
+                                }
+                            }
+                        ]
                     }
                 }
             ]
@@ -1158,13 +1185,13 @@ class ElasticsearchEngine:
                                     "type": "phrase"
                                 }
                             },
-                            # 第二层：完整词匹配（所有词都要出现）- 中等权重
+                            # 第二层：完整词匹配（指标所有词都在用户问题中）- 中等权重
                             {
                                 "multi_match": {
                                     "query": query,
                                     "fields": ["metric_name^5", "metric_alias^4", "related_entities^3"],
-                                    "type": "best_fields",
-                                    "operator": "and"
+                                    "type": "best_fields"
+                                    # 去掉 operator: "and"，让ES自然计算：指标词数越多且全匹配，得分越高
                                 }
                             },
                             # 第三层：模糊匹配 - 最低权重
