@@ -534,11 +534,29 @@ class ElasticsearchEngine:
                             },
                             # 完整词匹配 - 中等权重（字段所有词都在用户问题中）
                             {
-                                "multi_match": {
-                                    "query": query,
-                                    "fields": ["chinese_name^5", "alias^4"],
-                                    "type": "best_fields"
-                                    # 去掉 operator: "and"，让ES自然计算：词数越多且全匹配，得分越高
+                                "bool": {
+                                    "should": [
+                                        # chinese_name: 字段所有词都要在查询中
+                                        {
+                                            "match": {
+                                                "chinese_name": {
+                                                    "query": query,
+                                                    "boost": 5,
+                                                    "operator": "and"  # 要求字段所有词都在查询中
+                                                }
+                                            }
+                                        },
+                                        # alias: 字段所有词都要在查询中
+                                        {
+                                            "match": {
+                                                "alias": {
+                                                    "query": query,
+                                                    "boost": 4,
+                                                    "operator": "and"  # 要求字段所有词都在查询中
+                                                }
+                                            }
+                                        }
+                                    ]
                                 }
                             },
                             # 模糊匹配 - 最低权重
@@ -1187,11 +1205,39 @@ class ElasticsearchEngine:
                             },
                             # 第二层：完整词匹配（指标所有词都在用户问题中）- 中等权重
                             {
-                                "multi_match": {
-                                    "query": query,
-                                    "fields": ["metric_name^5", "metric_alias^4", "related_entities^3"],
-                                    "type": "best_fields"
-                                    # 去掉 operator: "and"，让ES自然计算：指标词数越多且全匹配，得分越高
+                                "bool": {
+                                    "should": [
+                                        # metric_name: 指标名所有词都要在查询中
+                                        {
+                                            "match": {
+                                                "metric_name": {
+                                                    "query": query,
+                                                    "boost": 5,
+                                                    "operator": "and"  # 要求字段所有词都在查询中
+                                                }
+                                            }
+                                        },
+                                        # metric_alias: 指标别名所有词都要在查询中
+                                        {
+                                            "match": {
+                                                "metric_alias": {
+                                                    "query": query,
+                                                    "boost": 4,
+                                                    "operator": "and"  # 要求字段所有词都在查询中
+                                                }
+                                            }
+                                        },
+                                        # related_entities: 相关实体所有词都要在查询中
+                                        {
+                                            "match": {
+                                                "related_entities": {
+                                                    "query": query,
+                                                    "boost": 3,
+                                                    "operator": "and"  # 要求字段所有词都在查询中
+                                                }
+                                            }
+                                        }
+                                    ]
                                 }
                             },
                             # 第三层：模糊匹配 - 最低权重
