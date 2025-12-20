@@ -443,12 +443,12 @@ class ElasticsearchEngine:
             if not self.index_exists():
                 raise Exception("索引不存在")
             
-            # 构建搜索查询 - 获取更多候选结果用于重新评分
+            # 构建搜索查询
             search_body = self._build_search_query(
                 query=query,
                 table_name=table_name,
                 enabled_only=enabled_only,
-                size=size * 3,  # 获取更多候选，以便重新评分后有足够的高质量结果
+                size=size,
                 use_tokenization=use_tokenization,
                 tokenizer_type=tokenizer_type,
                 highlight=highlight
@@ -460,33 +460,18 @@ class ElasticsearchEngine:
                 body=search_body
             )
             
-            # 解析结果并进行二次评分
+            # 解析结果
             results = []
             for hit in response['hits']['hits']:
                 field_data = hit['_source']
                 
                 field = MetadataField(**field_data)
                 
-                # ========== 二次评分：检查字段值是否被包含在用户查询中 ==========
-                es_score = hit['_score']
-                alias_list = field.alias if isinstance(field.alias, list) else ([field.alias] if field.alias else [])
-                containment_score, matched_field, matched_value = self._calculate_field_containment_score(
-                    query=query,
-                    chinese_name=field.chinese_name,
-                    alias=alias_list
-                )
-                
-                # 综合评分：包含匹配得高分，ES原始得分作为辅助
-                final_score = containment_score + (es_score * 0.1)
-                
                 # 提取高亮和匹配文本
                 highlight_info = hit.get('highlight', {})
                 matched_texts = []
                 
-                # 优先显示包含匹配的内容
-                if matched_value:
-                    matched_texts.append(f"{matched_field}: {matched_value} (完整包含在查询中)")
-                elif highlight_info:
+                if highlight_info:
                     for field_name, highlights in highlight_info.items():
                         for hl in highlights:
                             clean_text = hl.replace('<em>', '').replace('</em>', '')
@@ -494,16 +479,12 @@ class ElasticsearchEngine:
                 
                 result = SearchResult(
                     field=field,
-                    score=final_score,
+                    score=hit['_score'],
                     matched_text='; '.join(matched_texts) if matched_texts else None,
                     highlight=highlight_info,
                     search_method="elasticsearch"
                 )
                 results.append(result)
-            
-            # 按新得分重新排序，并截取前size个
-            results.sort(key=lambda x: x.score, reverse=True)
-            results = results[:size]
             
             took = int((datetime.now() - start_time).total_seconds() * 1000)
             
@@ -529,51 +510,6 @@ class ElasticsearchEngine:
                 tokenization_used=use_tokenization,
                 tokenizer_type=tokenizer_type if use_tokenization else None
             )
-    
-    def _calculate_field_containment_score(self, query: str, chinese_name: str, 
-                                           alias: List[str]) -> tuple:
-        """
-        计算字段的chinese_name和alias是否被包含在用户查询中的得分
-        
-        Returns:
-            (score, matched_field, matched_value): 得分、匹配的字段名、匹配的值
-        """
-        best_score = 0.0
-        best_field = None
-        best_value = None
-        
-        # 1. 检查中文名称是否在查询中 - 最高权重 (100分基础)
-        if chinese_name and chinese_name in query:
-            score = 100.0 + len(chinese_name) * 2  # 名称越长，匹配越精确，加分越多
-            if score > best_score:
-                best_score = score
-                best_field = "chinese_name"
-                best_value = chinese_name
-        
-        # 2. 检查别名是否在查询中 - 次高权重 (80分基础)
-        for a in alias:
-            if a and a in query:
-                score = 80.0 + len(a) * 2  # 别名越长，匹配越精确，加分越多
-                if score > best_score:
-                    best_score = score
-                    best_field = "alias"
-                    best_value = a
-        
-        return best_score, best_field, best_value
-    
-    def _calculate_dimension_value_containment_score(self, query: str, dimension_value: str) -> tuple:
-        """
-        计算维度值是否被包含在用户查询中的得分
-        
-        Returns:
-            (score, is_contained): 得分、是否完整包含
-        """
-        if dimension_value and dimension_value in query:
-            # 维度值完整出现在查询中 - 80分基础 + 长度加成
-            score = 80.0 + len(dimension_value) * 2
-            return score, True
-        
-        return 0.0, False
     
     def _build_search_query(self, query: str, table_name: Optional[Union[str, List[str]]] = None,
                            enabled_only: bool = True,
@@ -762,12 +698,12 @@ class ElasticsearchEngine:
                     search_methods=["dimension_values"]
                 )
             
-            # 构建搜索查询 - 获取更多候选结果用于重新评分
+            # 构建搜索查询
             search_body = self._build_dimension_values_search_query(
                 query=query,
                 table_name=table_name,
                 column_name=column_name,
-                size=size * 3,  # 获取更多候选，以便重新评分后有足够的高质量结果
+                size=size,
                 use_tokenization=use_tokenization,
                 tokenizer_type=tokenizer_type,
                 highlight=highlight
@@ -779,21 +715,10 @@ class ElasticsearchEngine:
                 body=search_body
             )
             
-            # 解析结果并进行二次评分
+            # 解析结果
             results = []
             for hit in response['hits']['hits']:
                 dimension_value_data = hit['_source']
-                dimension_value = dimension_value_data['value']
-                
-                # ========== 二次评分：检查维度值是否被包含在用户查询中 ==========
-                es_score = hit['_score']
-                containment_score, is_contained = self._calculate_dimension_value_containment_score(
-                    query=query,
-                    dimension_value=dimension_value
-                )
-                
-                # 综合评分：包含匹配得高分，ES原始得分作为辅助
-                final_score = containment_score + (es_score * 0.1)
                 
                 # 创建一个虚拟的MetadataField对象来保持兼容性
                 field = MetadataField(
@@ -802,35 +727,28 @@ class ElasticsearchEngine:
                     chinese_name=dimension_value_data.get('chinese_name', dimension_value_data.get('display_name', '')),
                     field_type='DIMENSION',
                     data_type=dimension_value_data.get('data_type', 'text'),
-                    description=f"维度值: {dimension_value}"
+                    description=f"维度值: {dimension_value_data['value']}"
                 )
                 
                 # 高亮信息
                 highlight_info = hit.get('highlight', {})
                 
-                # 匹配文本 - 标注是否完整包含
-                if is_contained:
-                    matched_text = f"维度值: {dimension_value} (完整包含在查询中)"
-                else:
-                    matched_text = f"维度值: {dimension_value}"
+                # 匹配文本
+                matched_text = f"维度值: {dimension_value_data['value']}"
                 
                 result = SearchResult(
                     field=field,
-                    score=final_score,
+                    score=hit['_score'],
                     matched_text=matched_text,
                     highlight=highlight_info,
                     search_method="dimension_values",
                     extra_info={
-                        'dimension_value': dimension_value,
+                        'dimension_value': dimension_value_data['value'],
                         'frequency': dimension_value_data.get('frequency', 1),
                         'value_hash': dimension_value_data.get('value_hash')
                     }
                 )
                 results.append(result)
-            
-            # 按新得分重新排序，并截取前size个
-            results.sort(key=lambda x: x.score, reverse=True)
-            results = results[:size]
             
             took = int((datetime.now() - start_time).total_seconds() * 1000)
             
@@ -1158,10 +1076,10 @@ class ElasticsearchEngine:
                     tokenizer_type=tokenizer_type if use_tokenization else None
                 )
             
-            # 构建搜索查询 - 获取更多候选结果用于重新评分
+            # 构建搜索查询
             search_body = self._build_metric_search_query(
                 query=query,
-                size=size * 3,  # 获取更多候选，以便重新评分后有足够的高质量结果
+                size=size,
                 use_tokenization=use_tokenization,
                 tokenizer_type=tokenizer_type,
                 highlight=highlight
@@ -1170,7 +1088,7 @@ class ElasticsearchEngine:
             # 执行搜索
             response = self.es.search(index=self.metric_index_name, body=search_body)
             
-            # 解析结果并进行二次评分
+            # 解析结果
             results = []
             for hit in response['hits']['hits']:
                 source = hit['_source']
@@ -1211,49 +1129,30 @@ class ElasticsearchEngine:
                     business_definition=source.get('business_definition', '')
                 )
                 
-                # ========== 二次评分：检查字段值是否被包含在用户查询中 ==========
-                es_score = hit['_score']
-                containment_score, matched_field, matched_value = self._calculate_containment_score(
-                    query=query,
-                    metric_name=metric.metric_name,
-                    metric_alias=metric_alias,
-                    related_entities=related_entities
-                )
-                
-                # 综合评分：包含匹配得高分，ES原始得分作为辅助
-                # 包含匹配的加成远大于模糊匹配
-                final_score = containment_score + (es_score * 0.1)  # ES得分只作为微调
-                
                 # 处理高亮
                 highlight_dict = {}
                 if 'highlight' in hit:
                     highlight_dict = hit['highlight']
                 
-                # 确定匹配的文本 - 优先显示包含匹配的内容
-                if matched_value:
-                    matched_text = f"{matched_field}: {matched_value} (完整包含在查询中)"
-                elif highlight_dict:
+                # 确定匹配的文本
+                matched_text = None
+                if highlight_dict:
                     for field, highlights in highlight_dict.items():
                         if highlights:
                             matched_text = f"{field}: {highlights[0]}"
                             break
-                    else:
-                        matched_text = f"metric_name: {metric.metric_name}"
-                else:
+                
+                if not matched_text:
                     matched_text = f"metric_name: {metric.metric_name}"
                 
                 result = MetricSearchResult(
                     metric=metric,
-                    score=final_score,
+                    score=hit['_score'],
                     matched_text=matched_text,
                     highlight=highlight_dict,
                     search_method="elasticsearch"
                 )
                 results.append(result)
-            
-            # 按新得分重新排序，并截取前size个
-            results.sort(key=lambda x: x.score, reverse=True)
-            results = results[:size]
             
             took = int((datetime.now() - start_time).total_seconds() * 1000)
             
@@ -1279,49 +1178,6 @@ class ElasticsearchEngine:
                 tokenization_used=use_tokenization,
                 tokenizer_type=tokenizer_type if use_tokenization else None
             )
-    
-    def _calculate_containment_score(self, query: str, metric_name: str, 
-                                     metric_alias: List[str], 
-                                     related_entities: List[str]) -> tuple:
-        """
-        计算字段值是否被包含在用户查询中的得分
-        
-        核心逻辑：检查 metric_name / metric_alias / related_entities 是否完整出现在用户查询中
-        
-        Returns:
-            (score, matched_field, matched_value): 得分、匹配的字段名、匹配的值
-        """
-        best_score = 0.0
-        best_field = None
-        best_value = None
-        
-        # 1. 检查指标名称是否在查询中 - 最高权重 (100分基础)
-        if metric_name and metric_name in query:
-            score = 100.0 + len(metric_name) * 2  # 名称越长，匹配越精确，加分越多
-            if score > best_score:
-                best_score = score
-                best_field = "metric_name"
-                best_value = metric_name
-        
-        # 2. 检查别名是否在查询中 - 次高权重 (80分基础)
-        for alias in metric_alias:
-            if alias and alias in query:
-                score = 80.0 + len(alias) * 2  # 别名越长，匹配越精确，加分越多
-                if score > best_score:
-                    best_score = score
-                    best_field = "metric_alias"
-                    best_value = alias
-        
-        # 3. 检查相关实体是否在查询中 - 较低权重 (50分基础)
-        for entity in related_entities:
-            if entity and entity in query:
-                score = 50.0 + len(entity) * 1.5  # 实体越长，匹配越精确，加分越多
-                if score > best_score:
-                    best_score = score
-                    best_field = "related_entities"
-                    best_value = entity
-        
-        return best_score, best_field, best_value
     
     def _build_metric_search_query(self, query: str, size: int = 10,
                                   use_tokenization: bool = True, tokenizer_type: str = "ik_max_word",
