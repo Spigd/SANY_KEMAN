@@ -739,6 +739,7 @@ class ElasticsearchEngine:
                     chinese_name=dimension_value_data.get('chinese_name', dimension_value_data.get('display_name', '')),
                     field_type='DIMENSION',
                     data_type=dimension_value_data.get('data_type', 'text'),
+                    alias=dimension_value_data.get('alias', []),
                     description=f"维度值: {dimension_value_data['value']}"
                 )
                 
@@ -756,6 +757,7 @@ class ElasticsearchEngine:
                     search_method="dimension_values",
                     extra_info={
                         'dimension_value': dimension_value_data['value'],
+                        'alias': dimension_value_data.get('alias', []),
                         'frequency': dimension_value_data.get('frequency', 1),
                         'value_hash': dimension_value_data.get('value_hash')
                     }
@@ -810,18 +812,22 @@ class ElasticsearchEngine:
                                 }
                             },
                             {
-                                "match_phrase": {
-                                    "alias": {
-                                        "query": query,
-                                        "boost": 20  # 提高别名短语匹配的权重，补偿IDF差异
-                                    }
+                                "constant_score": {
+                                    "filter": {
+                                        "match": {
+                                            "alias": {
+                                                "query": query
+                                            }
+                                        }
+                                    },
+                                    "boost": 60
                                 }
                             },
                             # 第二层：完整词匹配（维度值所有词都在用户问题中）- 中等权重
                             {
                                 "multi_match": {
                                     "query": query,
-                                    "fields": ["value^5", "alias^10"],  # 提高别名匹配权重
+                                    "fields": ["value^5", "alias^60"],
                                     "type": "best_fields"
                                 }
                             },
@@ -829,7 +835,7 @@ class ElasticsearchEngine:
                             {
                                 "multi_match": {
                                     "query": query,
-                                    "fields": ["value^2", "alias^10"],  # 提高别名匹配权重
+                                    "fields": ["value^2", "alias^60"],
                                     "type": "best_fields",
                                     "fuzziness": "AUTO"
                                 }
