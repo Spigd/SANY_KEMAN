@@ -27,6 +27,7 @@ class DimensionValue(BaseModel):
     column_name: str = Field(..., description="列名")
     chinese_name: str = Field(..., description="维度的中文名称")
     value: str = Field(..., description="维度值")
+    alias: List[str] = Field(default_factory=list, description="维度值别名/术语描述")
     value_hash: Optional[str] = Field(default=None, description="值的哈希，用于去重")
     field_type: str = Field(default="dimension", description="字段类型，固定为dimension")
     data_type: str = Field(default="text", description="数据类型")
@@ -35,7 +36,8 @@ class DimensionValue(BaseModel):
     
     def get_search_text(self) -> str:
         """获取用于搜索的文本"""
-        return f"{self.chinese_name} {self.value}"
+        alias_text = " ".join(self.alias) if self.alias else ""
+        return f"{self.chinese_name} {self.value} {alias_text}"
 
 
 class SearchResult(BaseModel):

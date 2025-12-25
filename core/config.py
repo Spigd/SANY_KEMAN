@@ -45,10 +45,9 @@ class Config:
         self.METRIC_EXCEL_PATH = os.getenv('METRIC_EXCEL_PATH', 'metric_latest.xlsx')
         
         # 元数据和指标API配置
-        self.METADATA_API_BASE_URL = os.getenv('METADATA_API_BASE_URL', 'https://metric-asset-api-internal.rootcloudapp.com')
+        self.METADATA_API_BASE_URL = os.getenv('METADATA_API_BASE_URL', 'http://metric-asset-api-internal.rootcloudapp.com')
         self.METADATA_API_TIMEOUT = int(os.getenv('METADATA_API_TIMEOUT', '30'))
-        self.METADATA_API_JWT = os.getenv('METADATA_API_JWT', 'eyJhbGciOiJIUzUxMiJ9.eyJvcmdhbml6YXRpb25JZCI6OTAwMCwibmFtZSI6ImFkbWluIiwiaWQiOi0xLCJpc0FkbWluIjp0cnVlLCJ1c2VybmFtZSI6ImFkbWluIiwic3ViIjoiYWRtaW4iLCJpYXQiOjE3NjQ2Njc3MTQsImV4cCI6MTc2NDc1NDExNH0.n_AYqqlh4JxrA2QD1oxqN9Zo1kitiv_wUKjdYH76kP-d34JxasKB4DXmUkNxa6pHxXGzRyko9JAAuMUWt4Ju_Q')
-        
+        self.METADATA_API_JWT = os.getenv('METADATA_API_JWT', 'eyJhbGciOiJIUzUxMiJ9.eyJvcmdhbml6YXRpb25JZCI6OTAwMCwibmFtZSI6ImFkbWluIiwiaWQiOi0xLCJpc0FkbWluIjp0cnVlLCJ1c2VybmFtZSI6ImFkbWluIiwic3ViIjoiYWRtaW4iLCJpYXQiOjE3NjY1OTAzOTYsImV4cCI6MTc2NjY3Njc5Nn0.vpLb8HM_AG8acaqykhUmKOEHXlgarv-WV8P0ZUvOKFnfM1A6344KzlqxhmI2yqw_gZyM_5MRv4A4PCSpKL52FA')
         # API数据同步配置
         self.API_SYNC_ENABLED = os.getenv('API_SYNC_ENABLED', 'true').lower() == 'true'
         # 解析同步间隔，如果为空或无效则返回None（将使用定时模式）

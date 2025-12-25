@@ -264,6 +264,18 @@ class ElasticsearchEngine:
                                 "keyword": {"type": "keyword"}
                             }
                         },
+                        "alias": {
+                            "type": "text",
+                            "analyzer": analyzer,
+                            "search_analyzer": search_analyzer,
+                            "fields": {
+                                "keyword": {"type": "keyword"},
+                                "exact": {
+                                    "type": "text",
+                                    "analyzer": "keyword"  # 精确匹配字段
+                                }
+                            }
+                        },
                         "value": {
                             "type": "text",
                             "analyzer": analyzer,
@@ -797,24 +809,29 @@ class ElasticsearchEngine:
                                     }
                                 }
                             },
+                            {
+                                "match_phrase": {
+                                    "alias": {
+                                        "query": query,
+                                        "boost": 20  # 提高别名短语匹配的权重，补偿IDF差异
+                                    }
+                                }
+                            },
                             # 第二层：完整词匹配（维度值所有词都在用户问题中）- 中等权重
                             {
-                                "match": {
-                                    "value": {
-                                        "query": query,
-                                        "boost": 5
-                                        # 词数越多且全匹配，得分越高
-                                    }
+                                "multi_match": {
+                                    "query": query,
+                                    "fields": ["value^5", "alias^10"],  # 提高别名匹配权重
+                                    "type": "best_fields"
                                 }
                             },
                             # 第三层：模糊匹配 - 最低权重
                             {
-                                "match": {
-                                    "value": {
-                                        "query": query,
-                                        "fuzziness": "AUTO",
-                                        "boost": 2
-                                    }
+                                "multi_match": {
+                                    "query": query,
+                                    "fields": ["value^2", "alias^10"],  # 提高别名匹配权重
+                                    "type": "best_fields",
+                                    "fuzziness": "AUTO"
                                 }
                             }
                         ]
@@ -829,7 +846,10 @@ class ElasticsearchEngine:
                         "should": [
                             {"match_phrase": {"value": query}},
                             {"term": {"value.keyword": query}},
-                            {"term": {"value.exact": query}}
+                            {"term": {"value.exact": query}},
+                            {"match_phrase": {"alias": query}},
+                            {"terms": {"alias.keyword": [query]}},
+                            {"term": {"alias.exact": query}}
                         ],
                         "minimum_should_match": 1
                     }
@@ -869,7 +889,8 @@ class ElasticsearchEngine:
         if highlight:
             search_body["highlight"] = {
                 "fields": {
-                    "value": {"pre_tags": ["<em>"], "post_tags": ["</em>"]}
+                    "value": {"pre_tags": ["<em>"], "post_tags": ["</em>"]},
+                    "alias": {"pre_tags": ["<em>"], "post_tags": ["</em>"]}
                 }
             }
         
