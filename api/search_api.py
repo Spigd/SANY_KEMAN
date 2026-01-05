@@ -12,7 +12,8 @@ from core.models import (
     SearchRequest, SearchResponse, IndexRequest, IndexResponse,
     TokenizationResult, HybridSearchConfig,
     MetricSearchRequest, MetricSearchResponse,
-    ComprehensiveAnalysisRequest, ComprehensiveAnalysisResponse
+    ComprehensiveAnalysisRequest, ComprehensiveAnalysisResponse,
+    DimensionValue
 )
 from search.hybrid_searcher import HybridSearcher
 from indexing.data_loader import MetadataLoader
@@ -728,6 +729,49 @@ async def search_dimension_values_post(request: SearchRequest):
     except Exception as e:
         logger.error(f"维度值搜索失败: {e}")
         raise HTTPException(status_code=500, detail=f"维度值搜索失败: {str(e)}")
+
+
+@router.get("/dimension-values/all", response_model=List[str],
+            summary="获取所有维度值", description="从源数据库提取所有维度值（仅返回文本列表）")
+async def get_all_dimension_values(
+    jwt: Optional[str] = Query(None, description="JWT认证token，留空则使用环境变量配置的JWT")
+):
+    """
+    获取所有维度值
+    
+    直接从源数据库提取所有配置为维度的字段值，并返回去重后的文本列表。
+    注意：此操作可能会比较耗时，取决于数据库中的数据量。
+    """
+    try:
+        from indexing.data_loader import MetadataLoader
+        from indexing.dimension_extractor import EnhancedDimensionExtractor
+        from core.models import DimensionValue
+        
+        # 加载元数据（获取维度字段信息）
+        loader = MetadataLoader(jwt=jwt)
+        fields = loader.load()
+        
+        if not fields:
+            raise HTTPException(
+                status_code=404,
+                detail="未找到元数据字段配置"
+            )
+            
+        # 提取维度值
+        extractor = EnhancedDimensionExtractor()
+        try:
+            dimension_values = extractor.extract_all_dimension_values(fields)
+            # 提取 value 字段并去重
+            values = sorted(list(set(dv.value for dv in dimension_values if dv.value)))
+            return values
+        finally:
+            extractor.close_connections()
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取所有维度值失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取所有维度值失败: {str(e)}")
 
 
 @router.get("/database/test", 
