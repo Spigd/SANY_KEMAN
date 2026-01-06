@@ -542,8 +542,7 @@ class ElasticsearchEngine:
                                 "multi_match": {
                                     "query": query,
                                     "fields": ["chinese_name^10", "alias^8"],
-                                    "type": "phrase",
-                                    "analyzer": tokenizer_type
+                                    "type": "phrase"
                                 }
                             },
                             # 完整词匹配 - 中等权重
@@ -551,8 +550,7 @@ class ElasticsearchEngine:
                                 "multi_match": {
                                     "query": query,
                                     "fields": ["chinese_name^5", "alias^4"],
-                                    "type": "best_fields",
-                                    "analyzer": tokenizer_type
+                                    "type": "best_fields"
                                 }
                             },
                             # 模糊匹配 - 最低权重
@@ -561,8 +559,7 @@ class ElasticsearchEngine:
                                     "query": query,
                                     "fields": ["chinese_name^2", "alias^1.5"],
                                     "type": "best_fields",
-                                    "fuzziness": "AUTO",
-                                    "analyzer": tokenizer_type
+                                    "fuzziness": "AUTO"
                                 }
                             }
                         ]
@@ -810,8 +807,7 @@ class ElasticsearchEngine:
                                 "match_phrase": {
                                     "value": {
                                         "query": query,
-                                        "boost": 10,
-                                        "analyzer": tokenizer_type
+                                        "boost": 10
                                     }
                                 }
                             },
@@ -820,8 +816,7 @@ class ElasticsearchEngine:
                                     "filter": {
                                         "match": {
                                             "alias": {
-                                                "query": query,
-                                                "analyzer": tokenizer_type
+                                                "query": query
                                             }
                                         }
                                     },
@@ -833,8 +828,7 @@ class ElasticsearchEngine:
                                 "multi_match": {
                                     "query": query,
                                     "fields": ["value^5", "alias^60"],
-                                    "type": "best_fields",
-                                    "analyzer": tokenizer_type
+                                    "type": "best_fields"
                                 }
                             },
                             # 第三层：模糊匹配 - 最低权重
@@ -843,8 +837,7 @@ class ElasticsearchEngine:
                                     "query": query,
                                     "fields": ["value^2", "alias^60"],
                                     "type": "best_fields",
-                                    "fuzziness": "AUTO",
-                                    "analyzer": tokenizer_type
+                                    "fuzziness": "AUTO"
                                 }
                             }
                         ]
@@ -1230,8 +1223,7 @@ class ElasticsearchEngine:
                                 "multi_match": {
                                     "query": query,
                                     "fields": ["metric_name^20", "metric_alias^20", "related_entities^5"],
-                                    "type": "phrase",
-                                    "analyzer": tokenizer_type
+                                    "type": "phrase"
                                 }
                             },
                             # 第二层：完整词匹配 - 中等权重
@@ -1239,8 +1231,7 @@ class ElasticsearchEngine:
                                 "multi_match": {
                                     "query": query,
                                     "fields": ["metric_name^5", "metric_alias^4", "related_entities^3"],
-                                    "type": "best_fields",
-                                    "analyzer": tokenizer_type
+                                    "type": "best_fields"
                                 }
                             },
                             # 第三层：模糊匹配 - 最低权重
@@ -1249,8 +1240,7 @@ class ElasticsearchEngine:
                                     "query": query,
                                     "fields": ["metric_name^2", "metric_alias^1.5", "related_entities^1"],
                                     "type": "best_fields",
-                                    "fuzziness": "AUTO",
-                                    "analyzer": tokenizer_type
+                                    "fuzziness": "AUTO"
                                 }
                             }
                         ]
