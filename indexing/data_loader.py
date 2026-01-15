@@ -25,7 +25,7 @@ class MetadataAPIClient:
     
     def __init__(self, base_url: Optional[str] = None, timeout: int = 30, jwt: Optional[str] = None):
         """初始化API客户端"""
-        self.base_url = base_url or config.METADATA_API_BASE_URL
+        self.base_url = base_url or config.API_BASE_URL
         self.timeout = timeout
         self.jwt = jwt or config.METADATA_API_JWT
         self.session = requests.Session()
@@ -97,6 +97,58 @@ class MetadataAPIClient:
         except Exception as e:
             logger.error(f"解析表字段失败 (table_id={table_id}): {e}")
             return []
+
+    def get_tables_by_domain(self, domain_id: int) -> List[int]:
+        """
+        获取数据域下的所有表ID
+        
+        Args:
+            domain_id: 数据域ID
+            
+        Returns:
+            表ID列表
+        """
+        try:
+            url = f"{self.base_url}/api/data-domains/{domain_id}"
+            
+            # 显式添加认证头
+            headers = {}
+            if config.METADATA_API_JWT:
+                headers['Authorization'] = f'Bearer {config.METADATA_API_JWT}'
+                
+            response = self.session.get(url, headers=headers, timeout=self.timeout)
+            response.raise_for_status()
+            
+            data = response.json()
+            # 检查payload是否存在
+            payload = data.get('payload')
+            if not payload:
+                logger.error(f"获取数据域信息失败: {data.get('message', '未知错误')}")
+                return []
+            
+            # 获取tables列表
+            tables = payload.get('tables', [])
+            if not isinstance(tables, list):
+                logger.warning(f"数据域 (ID={domain_id}) 的tables字段不是列表")
+                return []
+            
+            # 提取ID
+            table_ids = []
+            for table in tables:
+                if isinstance(table, dict) and 'id' in table:
+                    try:
+                        table_ids.append(int(table['id']))
+                    except (ValueError, TypeError):
+                        pass
+            
+            return table_ids
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"请求数据域API失败 (domain_id={domain_id}): {e}")
+            return []
+        except Exception as e:
+            logger.error(f"解析数据域信息失败 (domain_id={domain_id}): {e}")
+            return []
     
     def close(self):
         """关闭会话"""
@@ -108,7 +160,7 @@ class MetricAPIClient:
     
     def __init__(self, base_url: Optional[str] = None, timeout: int = 30, jwt: Optional[str] = None):
         """初始化API客户端"""
-        self.base_url = base_url or config.METADATA_API_BASE_URL
+        self.base_url = base_url or config.API_BASE_URL
         self.timeout = timeout
         self.jwt = jwt or config.METADATA_API_JWT
         self.session = requests.Session()
@@ -123,21 +175,24 @@ class MetricAPIClient:
                 'Authorization': f'Bearer {self.jwt}'
             })
     
-    def get_metrics_list(self, ids: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_metrics_list(self, category_id: Optional[str] = None, status: str = 'PUBLISHED') -> List[Dict[str, Any]]:
         """
         获取指标列表
         
         Args:
-            ids: 指标ID列表（逗号分隔的字符串，如 "171,172"）
+            category_id: 指标目录ID
+            status: 指标状态，默认为'PUBLISHED'
             
         Returns:
             指标信息列表
         """
         try:
             url = f"{self.base_url}/api/v1/metrics"
-            params = {}
-            if ids:
-                params['ids'] = ids
+            params = {
+                'status': status
+            }
+            if category_id:
+                params['categoryId'] = category_id
             
             response = self.session.get(url, params=params, timeout=self.timeout)
             response.raise_for_status()
@@ -196,29 +251,96 @@ class MetadataLoader:
     def __init__(self, excel_path: Optional[str] = None, api_base_url: Optional[str] = None, jwt: Optional[str] = None):
         """初始化加载器"""
         self.excel_path = excel_path or config.metadata_excel_full_path
-        self.api_base_url = api_base_url or config.METADATA_API_BASE_URL
+        self.api_base_url = api_base_url or config.API_BASE_URL
         self.jwt = jwt or config.METADATA_API_JWT
         self.api_client = None
     
-    def _parse_table_ids(self) -> List[int]:
-        """从配置中解析表ID列表"""
-        table_ids_str = config.API_TABLE_IDS.strip()
-        if not table_ids_str:
-            return []
+    def get_target_table_ids(self) -> List[int]:
+        """
+        获取需要同步的表ID列表
+        优先使用数据域配置动态获取
+        """
+        # 1. 检查是否配置了数据域ID
+        domain_id_str = config.API_DATA_DOMAIN_ID.strip()
+        if domain_id_str:
+            try:
+                domain_id = int(domain_id_str)
+                logger.info(f"配置了数据域ID: {domain_id}，正在动态获取表列表...")
+                
+                # 临时创建客户端获取表ID
+                client = MetadataAPIClient(self.api_base_url, jwt=self.jwt)
+                try:
+                    table_ids = client.get_tables_by_domain(domain_id)
+                    logger.info(f"从数据域 (ID={domain_id}) 获取到 {len(table_ids)} 个表ID: {table_ids}")
+                    return table_ids
+                finally:
+                    client.close()
+            except ValueError:
+                logger.error(f"无效的API_DATA_DOMAIN_ID: {domain_id_str}")
+                return []
+            except Exception as e:
+                logger.error(f"通过数据域获取表ID失败: {e}")
+                return []
         
-        try:
-            table_ids = [int(tid.strip()) for tid in table_ids_str.split(',') if tid.strip()]
-            return table_ids
-        except ValueError as e:
-            logger.error(f"解析表ID列表失败: {e}")
-            return []
+        # 2. 如果没有配置数据域ID，返回空列表
+        return []
     
+    def validate_tables_in_domain(self, table_names: List[str]) -> Dict[str, Optional[int]]:
+        """
+        校验多个表是否属于当前数据域，并返回表名到ID的映射
+        
+        Args:
+            table_names: 表名列表
+            
+        Returns:
+            字典 {表名: 表ID或None}
+        """
+        if not table_names:
+            return {}
+            
+        # 获取当前数据域下的所有表ID
+        target_ids = self.get_target_table_ids()
+        if not target_ids:
+            return {name: None for name in table_names}
+        
+        # 确保API客户端已初始化
+        if not self.api_client:
+            self.api_client = MetadataAPIClient(self.api_base_url, jwt=self.jwt)
+            
+        # 获取所有目标表的信息以建立映射
+        # 注意：这里为了性能，理想情况是有一个批量获取表信息的接口
+        # 但目前只能遍历获取。为了减少请求，我们可以先获取所有表信息缓存起来
+        
+        table_map = {} # tableName -> tableId
+        
+        # 并行获取表信息以提高速度
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_id = {
+                executor.submit(self.api_client.get_table_info, tid): tid 
+                for tid in target_ids
+            }
+            
+            for future in as_completed(future_to_id):
+                try:
+                    info = future.result()
+                    if info and 'tableName' in info and 'id' in info:
+                        table_map[info['tableName']] = int(info['id'])
+                except Exception as e:
+                    logger.error(f"获取表信息失败: {e}")
+        
+        # 构建结果
+        result = {}
+        for name in table_names:
+            result[name] = table_map.get(name)
+            
+        return result
+
     def load(self, table_ids: Optional[List[int]] = None) -> List[MetadataField]:
         """
         智能加载元数据 - 根据配置自动选择数据源
         
         Args:
-            table_ids: 表ID列表（仅API模式需要），如果不提供则使用配置的表ID
+            table_ids: 表ID列表（仅API模式需要），如果不提供则使用配置的数据域自动获取
             
         Returns:
             元数据字段列表
@@ -226,14 +348,14 @@ class MetadataLoader:
         if config.API_SYNC_ENABLED:
             # 从API加载
             if not table_ids:
-                # 使用配置的表ID
-                table_ids = self._parse_table_ids()
+                # 使用配置获取表ID
+                table_ids = self.get_target_table_ids()
             
             if table_ids:
                 logger.info(f"从API加载元数据（启用API同步模式）")
                 return self.load_from_api(table_ids)
             else:
-                logger.warning("API同步已启用但未配置表ID，回退到Excel")
+                logger.warning("API同步已启用但未获取到有效的表ID（请检查API_DATA_DOMAIN_ID配置），回退到Excel")
                 return self.load_from_excel()
         else:
             # 从Excel加载
@@ -601,7 +723,7 @@ class MetricLoader:
     def __init__(self, excel_path: Optional[str] = None, api_base_url: Optional[str] = None, jwt: Optional[str] = None):
         """初始化加载器"""
         self.excel_path = excel_path or config.metric_excel_full_path
-        self.api_base_url = api_base_url or config.METADATA_API_BASE_URL
+        self.api_base_url = api_base_url or config.API_BASE_URL
         self.jwt = jwt or config.METADATA_API_JWT
         self.api_client = None
     
@@ -619,30 +741,32 @@ class MetricLoader:
             logger.info("从Excel加载指标（未启用API同步）")
             return self.load_from_excel()
     
-    def load_from_api(self, max_workers: int = 10, ids: Optional[str] = None) -> List[Metric]:
+    def load_from_api(self) -> List[Metric]:
         """
-        从API加载指标数据
+        从API加载指标
         
-        Args:
-            max_workers: 并行请求的最大工作线程数
-            ids: 指标ID列表（逗号分隔的字符串），留空则使用环境变量配置
-            
         Returns:
-            指标对象列表
+            指标列表
         """
-        try:
+        if not self.api_client:
             self.api_client = MetricAPIClient(self.api_base_url, jwt=self.jwt)
+        
+        try:
+            # 获取指标目录ID配置
+            category_id = config.API_METRIC_CATEGORY_ID
             
-            # 如果没有传ids，使用环境变量
-            metric_ids = ids or config.API_METRIC_IDS
+            logger.info(f"正在从API加载指标 (categoryId={category_id}, status=PUBLISHED)...")
             
-            # 获取指标列表 - 传入ids参数
-            metrics_list = self.api_client.get_metrics_list(ids=metric_ids)
+            # 获取指标列表
+            metrics_list = self.api_client.get_metrics_list(category_id=category_id, status='PUBLISHED')
+            
             if not metrics_list:
-                logger.warning("API返回的指标列表为空")
+                logger.warning("未从API获取到任何指标")
                 return []
             
-            logger.info(f"从API获取到 {len(metrics_list)} 个指标")
+            logger.info(f"获取到 {len(metrics_list)} 个指标，开始获取详情...")
+            
+            max_workers = 10
             
             # 并行获取每个指标的详情
             metrics = []

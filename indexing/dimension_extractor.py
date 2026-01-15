@@ -23,7 +23,7 @@ class TermAPIClient:
         if api_url:
             self.api_url = api_url
         else:
-            base_url = config.METADATA_API_BASE_URL
+            base_url = config.API_BASE_URL
             self.api_url = f"{base_url}/api/v1/terminologies/query"
             
         self.session = requests.Session()

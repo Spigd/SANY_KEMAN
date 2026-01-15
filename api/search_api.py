@@ -272,6 +272,67 @@ def ensure_searcher_ready(searcher: HybridSearcher) -> bool:
     return True
 
 
+@router.post("/table-fields/batch",
+             summary="批量获取表字段信息",
+             description="获取多个表的字段信息，会自动校验表是否属于当前配置的数据域")
+async def get_batch_table_fields(
+    table_names: List[str]=[]
+):
+    """
+    批量获取表字段信息
+    """
+    try:
+        from indexing.data_loader import MetadataLoader
+        
+        # 初始化加载器
+        loader = MetadataLoader()
+        
+        # 校验表是否属于当前数据域
+        validation_result = loader.validate_tables_in_domain(table_names)
+        
+        results = {}
+        errors = []
+        
+        # 收集有效表的字段信息
+        valid_table_ids = []
+        for name, tid in validation_result.items():
+            if tid is not None:
+                valid_table_ids.append((name, tid))
+            else:
+                errors.append(f"表 '{name}' 不属于当前数据域或不存在")
+        
+        # 获取字段信息
+        if valid_table_ids:
+            # 确保客户端已初始化
+            if not loader.api_client:
+                from indexing.data_loader import MetadataAPIClient
+                loader.api_client = MetadataAPIClient(loader.api_base_url, jwt=loader.jwt)
+                
+            for name, tid in valid_table_ids:
+                fields = loader.api_client.get_table_fields(tid)
+                if fields:
+                    results[name] = fields
+                else:
+                    # 虽然表存在但没获取到字段，也记录一下
+                    results[name] = []
+        
+        return {
+            "success": True,
+            "data": results,
+            "errors": errors if errors else None,
+            "message": "获取成功" if not errors else "部分表获取失败"
+        }
+        
+    except Exception as e:
+        logger.error(f"批量获取表字段失败: {e}")
+        return {
+            "success": False,
+            "data": None,
+            "errors": [str(e)],
+            "message": "获取失败"
+        }
+
+
 @router.get("/fields", response_model=SearchResponse, summary="搜索元数据字段")
 async def search_fields(
     q: str = Query(..., description="搜索查询"),
@@ -1107,32 +1168,30 @@ async def sync_metadata_from_api(
     - table_ids: 可选，指定要同步的表ID列表
     
     ## 注意
-    - 如果不提供table_ids，将使用环境变量API_TABLE_IDS配置的表ID
+    - 如果不提供table_ids，将根据配置的API_DATA_DOMAIN_ID自动获取表ID
     - 同步过程可能需要较长时间
     - 同步完成后会自动更新搜索引擎
     """
     try:
         from indexing.data_loader import MetadataLoader
-        from core.config import config
+        
+        # 从API加载元数据
+        loader = MetadataLoader(jwt=jwt)
         
         # 确定要同步的表ID
         sync_table_ids = table_ids if table_ids else []
         if not sync_table_ids:
-            # 使用配置的表ID
-            table_ids_str = config.API_TABLE_IDS.strip()
-            if table_ids_str:
-                sync_table_ids = [int(tid.strip()) for tid in table_ids_str.split(',') if tid.strip()]
+            # 使用配置获取表ID
+            sync_table_ids = loader.get_target_table_ids()
         
         if not sync_table_ids:
             raise HTTPException(
                 status_code=400,
-                detail="未提供表ID且未配置API_TABLE_IDS环境变量"
+                detail="未提供表ID且无法通过数据域配置自动获取"
             )
         
         logger.info(f"手动触发元数据同步，表ID: {sync_table_ids}")
         
-        # 从API加载元数据
-        loader = MetadataLoader(jwt=jwt)
         fields = loader.load_from_api(sync_table_ids)
         
         if not fields:
@@ -1181,7 +1240,6 @@ async def sync_metadata_from_api(
              description="从API手动同步指标到Elasticsearch")
 async def sync_metrics_from_api(
     jwt: Optional[str] = Query(None, description="JWT认证token，留空则使用环境变量配置的JWT"),
-    ids: Optional[str] = Query(None, description="指标ID列表，逗号分隔（如171,172），留空则使用环境变量或加载所有"),
     force: bool = Query(True, description="是否强制重建索引（默认True）"),
     searcher: HybridSearcher = Depends(get_hybrid_searcher)
 ):
@@ -1191,14 +1249,14 @@ async def sync_metrics_from_api(
     ## 注意
     - 同步过程可能需要较长时间（需要获取每个指标的详情）
     - 使用并行方式加速同步
-    - ids参数示例: "171,172" 或 "171,172,173"
+    - 将同步配置的API_METRIC_CATEGORY_ID下的所有PUBLISHED状态指标
     """
     try:
         from indexing.data_loader import MetricLoader
         
         # 从API加载指标
         loader = MetricLoader(jwt=jwt)
-        metrics = loader.load_from_api(max_workers=10, ids=ids)
+        metrics = loader.load_from_api()
         
         if not metrics:
             raise HTTPException(

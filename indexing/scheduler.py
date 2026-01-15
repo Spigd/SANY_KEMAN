@@ -46,31 +46,19 @@ class DataSyncScheduler:
             self.sync_interval_hours = None
             self.sync_cron_time = '05:00'
         
-        self.table_ids = self._parse_table_ids()
         self.sync_lock = threading.Lock()
         self.last_sync_time = None
         self.last_sync_status = None
         self.is_syncing = False
         
+        # 初始化表ID列表
+        loader = MetadataLoader(jwt=config.METADATA_API_JWT)
+        self.table_ids = loader.get_target_table_ids()
+        
         if self.sync_mode == 'interval':
             logger.info(f"数据同步调度器初始化: 模式=间隔同步, 间隔={self.sync_interval_hours}小时, 表ID={self.table_ids}")
         else:
             logger.info(f"数据同步调度器初始化: 模式=定时同步, 时间={self.sync_cron_time}, 表ID={self.table_ids}")
-    
-    def _parse_table_ids(self) -> List[int]:
-        """解析表ID列表"""
-        table_ids_str = config.API_TABLE_IDS.strip()
-        if not table_ids_str:
-            logger.warning("未配置API_TABLE_IDS，无法从API同步元数据")
-            return []
-        
-        try:
-            table_ids = [int(tid.strip()) for tid in table_ids_str.split(',') if tid.strip()]
-            logger.info(f"解析到 {len(table_ids)} 个表ID: {table_ids}")
-            return table_ids
-        except ValueError as e:
-            logger.error(f"解析表ID列表失败: {e}")
-            return []
     
     def start(self):
         """启动调度器"""
@@ -243,17 +231,20 @@ class DataSyncScheduler:
     def _sync_metadata(self) -> Dict[str, Any]:
         """同步元数据"""
         try:
+            # 刷新表ID列表 (处理数据域中表的变化)
+            loader = MetadataLoader(jwt=config.METADATA_API_JWT)
+            self.table_ids = loader.get_target_table_ids()
+            
             if not self.table_ids:
                 return {
                     'success': False,
-                    'message': '表ID列表为空',
+                    'message': '表ID列表为空（未配置数据域或获取失败）',
                     'fields_loaded': 0,
                     'fields_indexed': 0
                 }
             
             # 从API加载元数据
             logger.info(f"  从API加载元数据（表ID: {self.table_ids}）...")
-            loader = MetadataLoader(jwt=config.METADATA_API_JWT)
             fields = loader.load_from_api(self.table_ids)
             
             if not fields:

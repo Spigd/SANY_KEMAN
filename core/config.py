@@ -45,9 +45,9 @@ class Config:
         self.METRIC_EXCEL_PATH = os.getenv('METRIC_EXCEL_PATH', 'metric_latest.xlsx')
         
         # 元数据和指标API配置
-        self.METADATA_API_BASE_URL = os.getenv('METADATA_API_BASE_URL', 'http://metric-asset-api-internal.rootcloudapp.com')
+        self.API_BASE_URL = os.getenv('API_BASE_URL', 'https://metric-asset-api-internal.rootcloudapp.com')
         self.METADATA_API_TIMEOUT = int(os.getenv('METADATA_API_TIMEOUT', '30'))
-        self.METADATA_API_JWT = os.getenv('METADATA_API_JWT', 'eyJhbGciOiJIUzUxMiJ9.eyJvcmdhbml6YXRpb25JZCI6OTAwMCwibmFtZSI6ImFkbWluIiwiaWQiOi0xLCJpc0FkbWluIjp0cnVlLCJ1c2VybmFtZSI6ImFkbWluIiwic3ViIjoiYWRtaW4iLCJpYXQiOjE3NjY1OTAzOTYsImV4cCI6MTc2NjY3Njc5Nn0.vpLb8HM_AG8acaqykhUmKOEHXlgarv-WV8P0ZUvOKFnfM1A6344KzlqxhmI2yqw_gZyM_5MRv4A4PCSpKL52FA')
+        self.METADATA_API_JWT = os.getenv('METADATA_API_JWT', 'eyJhbGciOiJIUzUxMiJ9.eyJvcmdhbml6YXRpb25JZCI6OTAwMCwibmFtZSI6ImFkbWluIiwiaWQiOi0xLCJpc0FkbWluIjp0cnVlLCJ1c2VybmFtZSI6ImFkbWluIiwic3ViIjoiYWRtaW4iLCJpYXQiOjE3Njg0NDI5MTQsImV4cCI6MTc2ODUyOTMxNH0.Cl7pllyoYFiTflrgmvuQ1vfb6_8Wnwb9NxNsqccNFSYPtnysIkcM88MEQ5CdKHl5PfC88XNH5b70GaUHAJ85Zw')
         # API数据同步配置
         self.API_SYNC_ENABLED = os.getenv('API_SYNC_ENABLED', 'true').lower() == 'true'
         # 解析同步间隔，如果为空或无效则返回None（将使用定时模式）
@@ -59,8 +59,8 @@ class Config:
                 self.API_SYNC_INTERVAL = None
         else:
             self.API_SYNC_INTERVAL = None
-        self.API_TABLE_IDS = os.getenv('API_TABLE_IDS', '268,269,270')  # 逗号分隔的表ID列表
-        self.API_METRIC_IDS = os.getenv('API_METRIC_IDS', '171,172,357')  # 逗号分隔的指标ID列表，如 "171,172"
+        self.API_DATA_DOMAIN_ID = os.getenv('API_DATA_DOMAIN_ID', '156')  # 数据域ID
+        self.API_METRIC_CATEGORY_ID = os.getenv('API_METRIC_CATEGORY_ID', '132')  # 指标目录ID
         
         # 混合搜索配置
         self.HYBRID_SEARCH_WEIGHTS = {
@@ -82,7 +82,7 @@ class Config:
         # 维度值索引配置
         self.DIMENSION_VALUE_INDEXING = {
             'enabled': os.getenv('DIMENSION_VALUE_INDEXING_ENABLED', 'true').lower() == 'true',
-            'max_values_per_column': int(os.getenv('MAX_VALUES_PER_COLUMN', '1000')),
+            'max_values_per_column': int(os.getenv('MAX_VALUES_PER_COLUMN', '10000')),
             'batch_size': int(os.getenv('DIMENSION_BATCH_SIZE', '100')),
             'auto_extract_on_index': os.getenv('AUTO_EXTRACT_DIMENSIONS', 'true').lower() == 'true'
         }
