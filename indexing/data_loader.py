@@ -752,19 +752,39 @@ class MetricLoader:
             self.api_client = MetricAPIClient(self.api_base_url, jwt=self.jwt)
         
         try:
-            # 获取指标目录ID配置
-            category_id = config.API_METRIC_CATEGORY_ID
+            # 获取指标目录ID配置列表
+            category_ids = config.api_metric_category_ids
             
-            logger.info(f"正在从API加载指标 (categoryId={category_id}, status=PUBLISHED)...")
+            logger.info(f"正在从API加载指标 (categoryIds={category_ids}, status=PUBLISHED)...")
             
-            # 获取指标列表
-            metrics_list = self.api_client.get_metrics_list(category_id=category_id, status='PUBLISHED')
+            all_metrics_list = []
             
-            if not metrics_list:
+            if not category_ids:
+                logger.info("未配置指标目录ID，尝试获取所有指标...")
+                metrics = self.api_client.get_metrics_list(category_id=None, status='PUBLISHED')
+                if metrics:
+                    all_metrics_list.extend(metrics)
+            else:
+                for cat_id in category_ids:
+                    logger.info(f"正在获取分类 {cat_id} 的指标...")
+                    metrics = self.api_client.get_metrics_list(category_id=cat_id, status='PUBLISHED')
+                    if metrics:
+                        all_metrics_list.extend(metrics)
+            
+            if not all_metrics_list:
                 logger.warning("未从API获取到任何指标")
                 return []
             
-            logger.info(f"获取到 {len(metrics_list)} 个指标，开始获取详情...")
+            # 去重
+            seen_ids = set()
+            metrics_list = []
+            for m in all_metrics_list:
+                mid = m.get('id')
+                if mid and mid not in seen_ids:
+                    seen_ids.add(mid)
+                    metrics_list.append(m)
+            
+            logger.info(f"获取到 {len(metrics_list)} 个唯一指标，开始获取详情...")
             
             max_workers = 10
             

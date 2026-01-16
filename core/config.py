@@ -128,6 +128,20 @@ class Config:
         return configs
     
     @property
+    def api_metric_category_ids(self) -> List[str]:
+        """获取指标目录ID列表"""
+        if not self.API_METRIC_CATEGORY_ID:
+            return []
+        
+        # 支持逗号、分号分割
+        separators = [',', '，', ';', '；']
+        ids_str = self.API_METRIC_CATEGORY_ID
+        for sep in separators:
+            ids_str = ids_str.replace(sep, ',')
+            
+        return [s.strip() for s in ids_str.split(',') if s.strip()]
+
+    @property
     def elasticsearch_url(self) -> str:
         """Elasticsearch URL"""
         return f"http://{self.ES_HOST}:{self.ES_PORT}"
